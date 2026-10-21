@@ -1,0 +1,3789 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#05070d" />
+<meta name="description" content="第一视角 3D 瞄准训练场 —— 鼠标转动视角、点击射击，练习 FPS 甩枪与点球精度。含灵敏度调节、分数/命中率/连击/倒计时等统计。" />
+<title>瞄准训练场 3D · AIM TRAINER</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='12' fill='none' stroke='%233ee7ff' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%233ee7ff'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #05070d;
+    --panel: rgba(9, 15, 26, 0.84);
+    --line: rgba(120, 210, 255, 0.14);
+    --text: #e9f5ff;
+    --muted: #8ea6bd;
+    --accent: #3ee7ff;
+    --accent-2: #7c5cff;
+    --danger: #ff4d6d;
+    --good: #5dffb0;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  .hidden { display: none !important; }
+
+  canvas#game {
+    position: fixed;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+
+  body.aiming canvas#game { cursor: none; }
+
+  /* ---------------- HUD ---------------- */
+  .hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 22px;
+    pointer-events: none;
+  }
+
+  .hud::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 140px;
+    background: linear-gradient(180deg, rgba(3, 7, 14, 0.88), rgba(3, 7, 14, 0));
+    pointer-events: none;
+  }
+
+  .hud-stats {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 22px;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 46px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+    line-height: 1;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.15;
+    color: #eaf8ff;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 18px rgba(62, 231, 255, 0.25);
+  }
+
+  #hud-acc { color: var(--accent); }
+
+  #hud-combo.hot {
+    color: #ffd166;
+    text-shadow: 0 0 20px rgba(255, 209, 102, 0.55);
+  }
+
+  .hud-timer {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 150px;
+  }
+
+  .timer-line {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    color: #f2fbff;
+  }
+
+  #hud-time {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    text-shadow: 0 0 22px rgba(62, 231, 255, 0.3);
+  }
+
+  .timer-unit {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .timer-bar {
+    width: 170px;
+    height: 5px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+  }
+
+  #timer-fill {
+    height: 100%;
+    width: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #3ee7ff, #7c5cff);
+  }
+
+  .hud-timer.danger #hud-time {
+    color: var(--danger);
+    animation: timePulse 0.6s ease-in-out infinite;
+  }
+
+  .hud-timer.danger #timer-fill {
+    background: linear-gradient(90deg, #ff4d6d, #ff8a5b);
+  }
+
+  @keyframes timePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+
+  .hud-actions {
+    position: relative;
+    display: flex;
+    gap: 8px;
+    pointer-events: auto;
+  }
+
+  .icon-btn {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 11px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(10, 16, 28, 0.55);
+    color: #cfe9ff;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+  }
+
+  .icon-btn:hover {
+    background: rgba(62, 231, 255, 0.14);
+    border-color: rgba(62, 231, 255, 0.42);
+    color: #fff;
+  }
+
+  .icon-btn:active { transform: scale(0.94); }
+
+  .icon-btn .ico {
+    width: 18px;
+    height: 18px;
+    display: block;
+  }
+
+  .icon-btn .sound-off { display: none; }
+  .icon-btn.muted .sound-on { display: none; }
+  .icon-btn.muted .sound-off { display: block; }
+
+  /* ---------------- 菜单 ---------------- */
+  .screen {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: max(20px, 3.5vh) 18px;
+    overflow-y: auto;
+  }
+
+  .panel {
+    background: linear-gradient(160deg, rgba(13, 21, 36, 0.9), rgba(6, 10, 18, 0.94));
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(18px);
+    animation: panelIn 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  @keyframes panelIn {
+    from { opacity: 0; transform: translateY(16px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .menu-panel {
+    width: min(780px, 100%);
+    margin: auto;
+    padding: clamp(22px, 3.2vw, 38px);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .menu-panel::before {
+    content: "";
+    position: absolute;
+    top: -160px;
+    right: -120px;
+    width: 360px;
+    height: 360px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(62, 231, 255, 0.16), transparent 65%);
+    pointer-events: none;
+  }
+
+  .brand {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .brand-mark {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    position: relative;
+    border-radius: 50%;
+    border: 1.5px solid rgba(110, 240, 255, 0.6);
+    box-shadow: 0 0 26px rgba(62, 231, 255, 0.22), inset 0 0 18px rgba(62, 231, 255, 0.12);
+    display: grid;
+    place-items: center;
+  }
+
+  .brand-mark::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #7cf7ff;
+    box-shadow: 0 0 14px #3ee7ff;
+  }
+
+  .brand-mark::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+    border: 1px dashed rgba(110, 240, 255, 0.2);
+  }
+
+  .brand-text h1 {
+    margin: 0;
+    font-size: clamp(24px, 3.6vw, 36px);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.1;
+    background: linear-gradient(100deg, #ffffff 10%, #8ef5ff 55%, #7c5cff 110%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .brand-sub {
+    margin: 5px 0 0;
+    font-size: 10px;
+    letter-spacing: 0.42em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .brand-desc {
+    position: relative;
+    margin: 16px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .field { margin-top: 22px; }
+
+  .field-label {
+    margin-bottom: 10px;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+  }
+
+  .sens-val {
+    margin-left: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0;
+    color: var(--accent);
+    text-shadow: 0 0 14px rgba(62, 231, 255, 0.45);
+  }
+
+  .modes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mode {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 14px 15px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.025);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    transition: background 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+  }
+
+  .mode:hover {
+    border-color: rgba(90, 220, 255, 0.35);
+    background: rgba(70, 210, 255, 0.06);
+    transform: translateY(-1px);
+  }
+
+  .mode.active {
+    border-color: rgba(62, 231, 255, 0.65);
+    background: linear-gradient(150deg, rgba(62, 231, 255, 0.16), rgba(124, 92, 255, 0.1));
+    box-shadow: 0 0 0 1px rgba(62, 231, 255, 0.22), 0 10px 26px rgba(0, 180, 255, 0.12);
+  }
+
+  .mode .glyph {
+    font-size: 18px;
+    line-height: 1;
+    color: var(--accent);
+    margin-bottom: 5px;
+    text-shadow: 0 0 12px rgba(62, 231, 255, 0.6);
+  }
+
+  .mode .name { font-size: 15px; font-weight: 600; }
+
+  .mode .desc { font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+  .field-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 26px;
+    align-items: flex-start;
+  }
+
+  .field-row > .field { margin-top: 0; }
+
+  .field.is-dim {
+    opacity: 0.35;
+    pointer-events: none;
+    filter: saturate(0.4);
+    transition: opacity 0.2s, filter 0.2s;
+  }
+
+  .goal-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .seg button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 15px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  }
+
+  .seg button:hover { color: var(--text); }
+
+  .seg button.active {
+    color: #dffcff;
+    background: linear-gradient(180deg, rgba(62, 231, 255, 0.24), rgba(62, 231, 255, 0.1));
+    box-shadow: inset 0 0 0 1px rgba(62, 231, 255, 0.34);
+  }
+
+  .sens-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .count-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .chip {
+    flex: none;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 6px 11px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .chip:hover {
+    color: var(--text);
+    border-color: rgba(90, 220, 255, 0.35);
+  }
+
+  .chip.active {
+    color: #dffcff;
+    border-color: rgba(62, 231, 255, 0.55);
+    background: rgba(62, 231, 255, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(62, 231, 255, 0.2);
+  }
+
+  .sens-end {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    flex: none;
+  }
+
+  .range {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 5px;
+    border-radius: 99px;
+    background: linear-gradient(90deg, rgba(62, 231, 255, 0.85), rgba(124, 92, 255, 0.85));
+    outline: none;
+    cursor: pointer;
+  }
+
+  .range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: #eafcff;
+    border: 2px solid #3ee7ff;
+    box-shadow: 0 0 16px rgba(62, 231, 255, 0.85);
+    transition: transform 0.12s;
+  }
+
+  .range::-webkit-slider-thumb:hover { transform: scale(1.12); }
+
+  .range::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #eafcff;
+    border: 2px solid #3ee7ff;
+    box-shadow: 0 0 16px rgba(62, 231, 255, 0.85);
+  }
+
+  .range::-moz-range-track {
+    height: 5px;
+    border-radius: 99px;
+    background: linear-gradient(90deg, rgba(62, 231, 255, 0.85), rgba(124, 92, 255, 0.85));
+  }
+
+  .field-note {
+    margin: 9px 0 0;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    color: rgba(142, 166, 189, 0.7);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 20px;
+    border-radius: 13px;
+    border: 1px solid transparent;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: transform 0.15s, filter 0.15s, background 0.15s, border-color 0.15s;
+  }
+
+  .btn:active { transform: scale(0.98); }
+
+  .btn.primary {
+    color: #03121c;
+    background: linear-gradient(100deg, #4ceeff, #5b8cff 60%, #8f6bff);
+    box-shadow: 0 12px 34px rgba(50, 170, 255, 0.34);
+  }
+
+  .btn.primary:hover {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+  }
+
+  .btn.ghost {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.045);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .btn.ghost:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .start-btn {
+    width: 100%;
+    margin-top: 24px;
+    padding: 16px;
+    font-size: 16px;
+    letter-spacing: 0.1em;
+  }
+
+  kbd {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0;
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    background: rgba(0, 0, 0, 0.14);
+    color: rgba(3, 18, 28, 0.65);
+  }
+
+  .field-note kbd,
+  .menu-tips kbd {
+    color: rgba(220, 245, 255, 0.78);
+    border-color: rgba(140, 210, 240, 0.22);
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  .btn.ghost kbd {
+    border-color: rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .menu-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+  }
+
+  .menu-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .music-hint {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: rgba(255, 150, 160, 0.85);
+    white-space: nowrap;
+  }
+
+  .best {
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  .best b {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: 0;
+    margin-left: 6px;
+    text-shadow: 0 0 16px rgba(62, 231, 255, 0.35);
+  }
+
+  .link-btn {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    padding: 5px 8px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .link-btn:hover {
+    color: var(--accent);
+    background: rgba(62, 231, 255, 0.08);
+  }
+
+  .menu-tips {
+    margin: 14px 0 0;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: rgba(142, 166, 189, 0.65);
+  }
+
+  /* ---------------- 覆盖层 ---------------- */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    padding: 24px 18px;
+    overflow-y: auto;
+    background: rgba(2, 5, 10, 0.58);
+    backdrop-filter: blur(7px);
+    animation: fadeIn 0.2s ease-out both;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .overlay .panel {
+    width: min(560px, 100%);
+    margin: auto;
+    padding: 28px;
+    text-align: center;
+  }
+
+  .kicker {
+    font-size: 10px;
+    letter-spacing: 0.34em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .rank {
+    margin-top: 10px;
+    font-size: clamp(22px, 3.2vw, 30px);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background: linear-gradient(100deg, #ffffff, #8ef5ff 60%, #7c5cff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .result-panel { width: min(640px, 100%) !important; }
+
+  /* ---------------- 历史战绩 ---------------- */
+  .history-panel {
+    width: min(740px, 100%) !important;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .history-panel .pause-title { margin-top: 8px; }
+
+  .history-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 16px 0 12px;
+  }
+
+  .hcard {
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .hcard .k {
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+  }
+
+  .hcard .v {
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: 18px;
+    color: #eaf8ff;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .history-chart-title {
+    margin-bottom: 6px;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+  }
+
+  .history-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 72px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.025);
+    overflow: hidden;
+  }
+
+  .hbar {
+    flex: 1;
+    min-width: 2px;
+    min-height: 3px;
+    border-radius: 3px 3px 1px 1px;
+    background: linear-gradient(180deg, #7ef8ff, rgba(62, 231, 255, 0.22));
+    box-shadow: 0 0 8px rgba(62, 231, 255, 0.25);
+    transition: filter 0.15s;
+  }
+
+  .hbar:hover { filter: brightness(1.25); }
+
+  .history-list {
+    margin: 8px -4px 12px;
+    padding: 0 4px;
+    max-height: 30vh;
+    overflow-y: auto;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .history-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 9px 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .h-left { min-width: 0; }
+
+  .h-date {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
+
+  .h-desc {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #dceaf6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .h-right { flex: none; text-align: right; }
+
+  .h-score {
+    font-family: var(--mono);
+    font-size: 16px;
+    color: #eaf8ff;
+  }
+
+  .h-sub {
+    margin-top: 2px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .history-empty {
+    padding: 22px 8px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .history-panel .actions { margin-top: auto; }
+
+  .history-link {
+    display: block;
+    margin: 12px auto 0;
+  }
+
+  .score-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .score {
+    font-family: var(--mono);
+    font-size: clamp(44px, 8vw, 66px);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: #f4fdff;
+    text-shadow: 0 0 40px rgba(62, 231, 255, 0.35);
+  }
+
+  .score-label {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .badge {
+    align-self: center;
+    margin-left: 6px;
+    padding: 4px 10px;
+    border-radius: 99px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #03121c;
+    background: linear-gradient(100deg, #5dffb0, #3ee7ff);
+    box-shadow: 0 0 22px rgba(93, 255, 176, 0.35);
+    animation: badgePop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+
+  @keyframes badgePop {
+    from { opacity: 0; transform: scale(0.6); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  .result-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 22px 0 16px;
+  }
+
+  .cell {
+    padding: 12px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .cell .k {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+  }
+
+  .cell .v {
+    margin-top: 5px;
+    font-family: var(--mono);
+    font-size: 18px;
+    color: #eaf8ff;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .result-best {
+    margin-bottom: 20px;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .result-best b {
+    font-family: var(--mono);
+    color: var(--accent);
+    margin-left: 6px;
+  }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .actions .btn { flex: 1; }
+
+  .actions.column { flex-direction: column; }
+
+  .pause-title {
+    margin: 12px 0 6px;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+
+  .pause-sub {
+    margin: 0 0 18px;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  .pause-sens {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 18px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .pause-sens-label {
+    flex: none;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+  }
+
+  .pause-sens .sens-val { margin-left: 0; flex: none; }
+
+  /* ---------------- 倒计时 / 闪光 / 提示 ---------------- */
+  .countdown {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+
+  #countdown-num {
+    font-family: var(--mono);
+    font-size: clamp(90px, 20vw, 190px);
+    font-weight: 800;
+    line-height: 1;
+    color: #ffffff;
+    text-shadow: 0 0 44px rgba(62, 231, 255, 0.6), 0 0 130px rgba(62, 231, 255, 0.28);
+    animation: countdownPop 0.6s ease-out both;
+  }
+
+  @keyframes countdownPop {
+    0% { opacity: 0; transform: scale(1.7); }
+    22% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0.92; transform: scale(0.94); }
+  }
+
+  .flash {
+    position: fixed;
+    inset: 0;
+    z-index: 33;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(120, 240, 255, 0.4), rgba(120, 240, 255, 0) 62%);
+  }
+
+  .flash.fire { animation: flashOut 0.5s ease-out; }
+
+  @keyframes flashOut {
+    0% { opacity: 0.85; }
+    100% { opacity: 0; }
+  }
+
+  .goal-banner {
+    position: fixed;
+    inset: 0;
+    z-index: 36;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    font-size: clamp(34px, 6vw, 64px);
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: #eaffff;
+    text-shadow: 0 0 40px rgba(62, 231, 255, 0.8), 0 0 120px rgba(62, 231, 255, 0.4);
+    opacity: 0;
+  }
+
+  .goal-banner.show { animation: goalBanner 0.9s ease-out both; }
+
+  @keyframes goalBanner {
+    0% { opacity: 0; transform: scale(0.82); }
+    14% { opacity: 1; transform: scale(1); }
+    78% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.05); }
+  }
+
+  .hint {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    z-index: 25;
+    transform: translateX(-50%);
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: rgba(150, 180, 205, 0.55);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 54px;
+    z-index: 60;
+    transform: translate(-50%, 8px);
+    padding: 8px 16px;
+    border-radius: 99px;
+    border: 1px solid rgba(120, 210, 255, 0.18);
+    background: rgba(8, 14, 24, 0.88);
+    color: #d9f4ff;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  /* ---------------- 响应式 ---------------- */
+  @media (max-width: 760px) {
+    .hud {
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px 14px;
+    }
+
+    .hud-stats { gap: 16px; }
+
+    .stat-value { font-size: 19px; }
+
+    .stat-label { font-size: 9px; }
+
+    .hud-timer {
+      position: static;
+      transform: none;
+      order: 3;
+      flex: 0 0 100%;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    #hud-time { font-size: 20px; }
+
+    .timer-bar {
+      flex: 1;
+      width: auto;
+      max-width: none;
+    }
+
+    .hud-actions { margin-left: auto; }
+
+    .field-row { gap: 18px; }
+  }
+
+  @media (max-width: 640px) {
+    .stat.optional { display: none; }
+    .hud-stats { gap: 18px; }
+  }
+
+  @media (max-width: 560px) {
+    .screen { padding: 14px 12px; }
+    .modes { grid-template-columns: 1fr; }
+    .mode { flex-direction: row; align-items: center; gap: 10px; padding: 12px 14px; }
+    .mode .glyph { margin-bottom: 0; }
+    .mode .name { flex: none; }
+    .mode .desc { margin-left: auto; text-align: right; }
+    .result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .overlay .panel { padding: 22px 18px; }
+    .menu-foot { justify-content: center; }
+    .hint { font-size: 10px; letter-spacing: 0.06em; }
+    .history-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .history-panel { max-height: 92vh; }
+    .history-list { max-height: 26vh; }
+  }
+
+  @media (pointer: coarse) {
+    .icon-btn { width: 44px; height: 44px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  @media (hover: none) {
+    .mode:hover { transform: none; }
+    .btn.primary:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="game" aria-label="第一视角 3D 瞄准训练区域"></canvas>
+
+  <!-- 游戏内 HUD -->
+  <header id="hud" class="hud hidden">
+    <div class="hud-stats">
+      <div class="stat">
+        <span class="stat-label">分数</span>
+        <span class="stat-value" id="hud-score">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">命中</span>
+        <span class="stat-value" id="hud-hits">0</span>
+      </div>
+      <div class="stat optional">
+        <span class="stat-label">脱靶</span>
+        <span class="stat-value" id="hud-misses">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">命中率</span>
+        <span class="stat-value" id="hud-acc">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">连击</span>
+        <span class="stat-value" id="hud-combo">0</span>
+      </div>
+    </div>
+
+    <div class="hud-timer" id="hud-timer">
+      <div class="timer-line">
+        <span id="hud-time">30.0</span>
+        <span class="timer-unit" id="hud-time-unit">s</span>
+      </div>
+      <div class="timer-bar"><div id="timer-fill"></div></div>
+    </div>
+
+    <div class="hud-actions">
+      <button id="btn-sound" class="icon-btn" type="button" aria-label="切换音效" aria-pressed="true">
+        <svg class="ico sound-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 9.5v5h3.2L12 18.5v-13L7.2 9.5H4z"/>
+          <path d="M15.5 9a4.2 4.2 0 0 1 0 6"/>
+          <path d="M18.2 6.6a7.8 7.8 0 0 1 0 10.8"/>
+        </svg>
+        <svg class="ico sound-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 9.5v5h3.2L12 18.5v-13L7.2 9.5H4z"/>
+          <path d="M16 9.5l5 5M21 9.5l-5 5"/>
+        </svg>
+      </button>
+      <button id="btn-pause" class="icon-btn" type="button" aria-label="暂停">
+        <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <rect x="7" y="5.5" width="3.4" height="13" rx="1.2"/>
+          <rect x="13.6" y="5.5" width="3.4" height="13" rx="1.2"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- 开始菜单 -->
+  <main id="menu" class="screen">
+    <div class="panel menu-panel">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-text">
+          <h1>瞄准训练场</h1>
+          <p class="brand-sub">Aim Trainer · 3D</p>
+        </div>
+      </div>
+      <p class="brand-desc">第一视角 3D 靶场。移动鼠标转动视角，用准星套住靶球后点击射击 —— 越快、越准，分数与连击越高。</p>
+
+      <div class="field">
+        <div class="field-label">训练模式</div>
+        <div class="modes" id="mode-group">
+          <button type="button" class="mode" data-mode="precision">
+            <span class="glyph">◎</span>
+            <span class="name">精准</span>
+            <span class="desc">静止靶 · 打磨命中率</span>
+          </button>
+          <button type="button" class="mode" data-mode="reaction">
+            <span class="glyph">◈</span>
+            <span class="name">反应</span>
+            <span class="desc">移动靶 · 跟枪与反应</span>
+          </button>
+          <button type="button" class="mode" data-mode="frenzy">
+            <span class="glyph">✦</span>
+            <span class="name">狂潮</span>
+            <span class="desc">多靶 · 甩枪清屏</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="field field-row">
+        <div class="field">
+          <div class="field-label">难度</div>
+          <div class="seg" id="diff-group">
+            <button type="button" data-diff="easy">简单</button>
+            <button type="button" data-diff="normal">普通</button>
+            <button type="button" data-diff="hard">困难</button>
+            <button type="button" data-diff="insane">极限</button>
+          </div>
+        </div>
+        <div class="field" id="duration-field">
+          <div class="field-label">时长（计时目标）</div>
+          <div class="seg" id="time-group">
+            <button type="button" data-time="15">15s</button>
+            <button type="button" data-time="30">30s</button>
+            <button type="button" data-time="60">60s</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">训练目标<b class="sens-val" id="goal-value">计时 · 30s</b></div>
+        <div class="goal-row" id="goal-group">
+          <button type="button" class="chip active" data-goal="time">计时</button>
+          <button type="button" class="chip" data-goal="50">50 球</button>
+          <button type="button" class="chip" data-goal="100">100 球</button>
+        </div>
+        <p class="field-note">选择球数目标时，打满指定球数即可结束，不限时间；时间目标则在倒计时结束时结算。</p>
+      </div>
+
+      <div class="field">
+        <div class="field-label">靶球数量<b class="sens-val" id="count-value">自动 · 1</b></div>
+        <div class="count-row">
+          <button id="count-auto" class="chip active" type="button" aria-pressed="true">自动</button>
+          <input id="count-slider" class="range" type="range" min="1" max="8" step="1" value="1" aria-label="靶球数量" />
+        </div>
+        <p class="field-note">「自动」按模式决定数量；拖动滑块固定 1–8 个。无论几个靶，只有打中才会补充新靶。</p>
+      </div>
+
+      <div class="field">
+        <div class="field-label">视角灵敏度<b class="sens-val" id="sens-value">1.00</b></div>
+        <div class="sens-row">
+          <span class="sens-end">低</span>
+          <input id="sens-slider" class="range" type="range" min="0.2" max="3" step="0.05" value="1" aria-label="视角灵敏度" />
+          <span class="sens-end">高</span>
+        </div>
+        <p class="field-note">数值越大，同样的鼠标移动会转动更多角度。游戏中可按 <kbd>[</kbd> <kbd>]</kbd> 微调。</p>
+      </div>
+
+      <button id="btn-start" class="btn primary start-btn" type="button">进入靶场 <kbd>Space</kbd></button>
+
+      <div class="menu-foot">
+        <div class="best">本组最佳 <b id="menu-best">--</b></div>
+        <div class="menu-links">
+          <button id="btn-sound-menu" class="link-btn" type="button">音效：开</button>
+          <button id="btn-music" class="link-btn" type="button">音乐：开</button>
+          <button id="btn-history-menu" class="link-btn" type="button">历史战绩</button>
+          <span id="music-hint" class="music-hint hidden">未找到 music/ 音频</span>
+        </div>
+      </div>
+      <p class="menu-tips">鼠标 / 拖动屏幕瞄准 · 左键 / 轻点射击 · Esc 暂停 · M 静音</p>
+    </div>
+  </main>
+
+  <!-- 倒计时 -->
+  <div id="countdown" class="countdown hidden" aria-hidden="true">
+    <span id="countdown-num">3</span>
+  </div>
+
+  <div id="flash" class="flash" aria-hidden="true"></div>
+  <div id="goal-banner" class="goal-banner hidden" aria-hidden="true">目标达成</div>
+
+  <!-- 暂停 -->
+  <section id="pause" class="overlay hidden" role="dialog" aria-modal="true" aria-label="游戏暂停">
+    <div class="panel">
+      <div class="kicker">Paused</div>
+      <h2 class="pause-title">已暂停</h2>
+      <p class="pause-sub">靶子与进度均已冻结，准备好了就继续。</p>
+      <div class="pause-sens">
+        <span class="pause-sens-label">灵敏度</span>
+        <input id="pause-sens" class="range" type="range" min="0.2" max="3" step="0.05" value="1" aria-label="视角灵敏度" />
+        <b class="sens-val" id="pause-sens-value">1.00</b>
+      </div>
+      <div class="actions column">
+        <button id="btn-resume" class="btn primary" type="button">继续训练 <kbd>Esc</kbd></button>
+        <button id="btn-restart" class="btn ghost" type="button">重新开始</button>
+        <button id="btn-quit" class="btn ghost" type="button">返回菜单</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 结算 -->
+  <section id="results" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="res-title">
+    <div class="panel result-panel">
+      <div class="kicker">训练结束</div>
+      <div id="res-title" class="rank">稳定发挥</div>
+      <div class="score-row">
+        <span class="score" id="res-score">0</span>
+        <span class="score-label">分</span>
+        <span id="res-badge" class="badge hidden">新纪录</span>
+      </div>
+      <div class="result-grid">
+        <div class="cell"><div class="k">命中</div><div class="v" id="res-hits">0</div></div>
+        <div class="cell"><div class="k">脱靶</div><div class="v" id="res-misses">0</div></div>
+        <div class="cell"><div class="k">命中率</div><div class="v" id="res-acc">--</div></div>
+        <div class="cell"><div class="k">最高连击</div><div class="v" id="res-combo">×0</div></div>
+        <div class="cell"><div class="k">平均反应</div><div class="v" id="res-react">—</div></div>
+        <div class="cell"><div class="k">每秒命中</div><div class="v" id="res-hps">0.00</div></div>
+      </div>
+      <div class="result-best">本组最佳 <b id="res-best">—</b></div>
+      <div class="actions">
+        <button id="btn-again" class="btn primary" type="button">再来一局 <kbd>R</kbd></button>
+        <button id="btn-menu" class="btn ghost" type="button">返回菜单</button>
+      </div>
+      <button id="btn-history-results" class="link-btn history-link" type="button">查看历史战绩</button>
+    </div>
+  </section>
+
+  <!-- 历史战绩 -->
+  <section id="history" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="history-title">
+    <div class="panel history-panel">
+      <div class="kicker">History</div>
+      <h2 class="pause-title" id="history-title">历史战绩</h2>
+      <p class="pause-sub" id="history-sub">最近 100 局 · 得分趋势与命中统计</p>
+
+      <div class="history-cards">
+        <div class="hcard"><div class="k">总场次</div><div class="v" id="hist-total">0</div></div>
+        <div class="hcard"><div class="k">总命中</div><div class="v" id="hist-hits">0</div></div>
+        <div class="hcard"><div class="k">平均命中率</div><div class="v" id="hist-acc">--</div></div>
+        <div class="hcard"><div class="k">最高分</div><div class="v" id="hist-best">0</div></div>
+        <div class="hcard"><div class="k">最高连击</div><div class="v" id="hist-combo">×0</div></div>
+        <div class="hcard"><div class="k">平均反应</div><div class="v" id="hist-react">—</div></div>
+      </div>
+
+      <div class="history-chart-title">最近 20 局得分</div>
+      <div id="history-chart" class="history-chart"></div>
+
+      <div id="history-list" class="history-list"></div>
+
+      <div class="actions">
+        <button id="btn-history-clear" class="btn ghost" type="button">清空历史</button>
+        <button id="btn-history-close" class="btn primary" type="button">关闭</button>
+      </div>
+    </div>
+  </section>
+
+  <p id="hint" class="hint hidden">移动鼠标瞄准 · 左键射击 · Esc 暂停</p>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ============ 小工具 ============ */
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+  const DEG = Math.PI / 180;
+
+  /* ============ 世界配置 ============ */
+  const MODES = {
+    precision: { label: '精准' },
+    reaction: { label: '反应' },
+    frenzy: { label: '狂潮' }
+  };
+
+  // radius 单位：米；speed 单位：米/秒；bonusWindow 单位：秒
+  const DIFFICULTY = {
+    easy:   { label: '简单', radius: 0.80, speed: 0.35, bonusWindow: 2.6, scoreMul: 0.8,  slots: 2 },
+    normal: { label: '普通', radius: 0.62, speed: 0.60, bonusWindow: 2.0, scoreMul: 1.0,  slots: 3 },
+    hard:   { label: '困难', radius: 0.48, speed: 0.90, bonusWindow: 1.6, scoreMul: 1.3,  slots: 4 },
+    insane: { label: '极限', radius: 0.38, speed: 1.25, bonusWindow: 1.3, scoreMul: 1.65, slots: 5 }
+  };
+
+  const DURATIONS = [15, 30, 60];
+  const MAX_TARGETS = 8;
+  const COUNTDOWN_FROM = 3;
+  const STORE_KEY = 'aim-trainer.v1';
+
+  const TUNNEL = { halfW: 10, height: 10, depth: 48 };
+  const EYE_HEIGHT = 1.7;
+  const FOV_Y = 70 * DEG;
+  const BASE_DEG_PER_PX = 0.09;
+  const YAW_LIMIT = 1.08;      // 约 ±62°
+  const PITCH_LIMIT = 0.62;    // 约 ±35°
+  const NEAR = 0.12;
+
+  /* ============ 运行时状态 ============ */
+  const S = {
+    state: 'menu',            // menu | countdown | playing | paused | results
+    mode: 'reaction',
+    difficulty: 'normal',
+    duration: 30,
+    goalMode: 'time',         // time | count
+    goalCount: 50,
+    goalDoneAt: 0,
+    targetCountMode: 'auto',  // auto | manual
+    targetCount: 3,
+    timeLeft: 30,
+    elapsed: 0,
+    score: 0,
+    hits: 0,
+    misses: 0,
+    combo: 0,
+    maxCombo: 0,
+    reactionSum: 0,
+    reactionCount: 0,
+
+    camera: { x: 0, y: EYE_HEIGHT, z: 0, yaw: 0, pitch: 0 },
+    sensitivity: 1,
+    pointerLocked: false,
+    lockFailed: false,
+
+    targets: [],
+    particles: [],
+    ripples: [],
+    floaters: [],
+    lastSpawn: null,
+
+    aimKick: 0,
+    lookVel: { x: 0, y: 0 },
+    shake: 0,
+    hitMarkerAt: -1,
+    flashAt: -1,
+    shotAt: -1,
+    tracer: null,
+
+    muted: false,
+    musicOn: true,
+    sawTouch: false,
+    countdownStart: 0,
+    countdownShown: -1
+  };
+
+  /* ============ 画布 ============ */
+  const canvas = $('#game');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  let W = window.innerWidth;
+  let H = window.innerHeight;
+  let DPR = 1;
+  let focal = 600;
+  let touchLook = null;
+  let lockExitAt = 0;
+  let historyOpen = false;
+  let clearArmed = false;
+  let clearTimer = 0;
+  const coarsePointer = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+
+  /* ============ 本地存储 ============ */
+  function loadStore() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      return raw ? JSON.parse(raw) || {} : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function saveStore(data) {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(data));
+    } catch (err) {
+      /* 隐私模式忽略 */
+    }
+  }
+
+  const savedSettings = loadStore().settings || {};
+  if (MODES[savedSettings.mode]) S.mode = savedSettings.mode;
+  if (DIFFICULTY[savedSettings.difficulty]) S.difficulty = savedSettings.difficulty;
+  if (DURATIONS.indexOf(savedSettings.duration) !== -1) S.duration = savedSettings.duration;
+  if (typeof savedSettings.sensitivity === 'number') {
+    S.sensitivity = clamp(savedSettings.sensitivity, 0.2, 3);
+  }
+  if (savedSettings.targetCountMode === 'manual') S.targetCountMode = 'manual';
+  if (typeof savedSettings.targetCount === 'number') {
+    S.targetCount = clamp(Math.round(savedSettings.targetCount), 1, MAX_TARGETS);
+  }
+  if (savedSettings.goalMode === 'count') S.goalMode = 'count';
+  if (savedSettings.goalCount === 50 || savedSettings.goalCount === 100) S.goalCount = savedSettings.goalCount;
+  S.muted = Boolean(savedSettings.muted);
+  S.musicOn = savedSettings.musicOn !== false;
+  S.timeLeft = S.duration;
+
+  /* ============ DOM 引用 ============ */
+  const ui = {
+    hud: $('#hud'),
+    menu: $('#menu'),
+    results: $('#results'),
+    pause: $('#pause'),
+    countdown: $('#countdown'),
+    countdownNum: $('#countdown-num'),
+    flash: $('#flash'),
+    goalBanner: $('#goal-banner'),
+    hint: $('#hint'),
+    toast: $('#toast'),
+    score: $('#hud-score'),
+    hits: $('#hud-hits'),
+    misses: $('#hud-misses'),
+    acc: $('#hud-acc'),
+    combo: $('#hud-combo'),
+    time: $('#hud-time'),
+    timeUnit: $('#hud-time-unit'),
+    timerWrap: $('#hud-timer'),
+    timerFill: $('#timer-fill'),
+    menuBest: $('#menu-best'),
+    soundBtn: $('#btn-sound'),
+    soundMenuBtn: $('#btn-sound-menu'),
+    musicBtn: $('#btn-music'),
+    musicHint: $('#music-hint'),
+    goalValue: $('#goal-value'),
+    durationField: $('#duration-field'),
+    sensSlider: $('#sens-slider'),
+    sensValue: $('#sens-value'),
+    countSlider: $('#count-slider'),
+    countValue: $('#count-value'),
+    countAuto: $('#count-auto'),
+    pauseSens: $('#pause-sens'),
+    pauseSensValue: $('#pause-sens-value'),
+    resScore: $('#res-score'),
+    resTitle: $('#res-title'),
+    resBadge: $('#res-badge'),
+    resHits: $('#res-hits'),
+    resMisses: $('#res-misses'),
+    resAcc: $('#res-acc'),
+    resCombo: $('#res-combo'),
+    resReact: $('#res-react'),
+    resHps: $('#res-hps'),
+    resBest: $('#res-best'),
+    history: $('#history'),
+    historyList: $('#history-list'),
+    historyChart: $('#history-chart'),
+    histTotal: $('#hist-total'),
+    histHits: $('#hist-hits'),
+    histAcc: $('#hist-acc'),
+    histBest: $('#hist-best'),
+    histCombo: $('#hist-combo'),
+    histReact: $('#hist-react'),
+    btnHistoryClear: $('#btn-history-clear'),
+    btnHistoryClose: $('#btn-history-close')
+  };
+
+  const show = (el) => el.classList.remove('hidden');
+  const hide = (el) => el.classList.add('hidden');
+  const setText = (el, text) => {
+    if (el && el.textContent !== text) el.textContent = text;
+  };
+  const formatScore = (n) => n.toLocaleString('en-US');
+
+  /* ============ 音效 ============ */
+  /* 分层合成：枪声 + 命中冲击 + 金属泛音 + 空间混响，命中反馈明显强于空枪 */
+  const Sound = (() => {
+    let ac = null;
+    let dry = null;
+    let wet = null;
+    let noiseBuffer = null;
+
+    function makeNoise(a, seconds) {
+      const len = Math.floor(a.sampleRate * seconds);
+      const buf = a.createBuffer(1, len, a.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return buf;
+    }
+
+    function makeImpulse(a, seconds, decay) {
+      const len = Math.floor(a.sampleRate * seconds);
+      const buf = a.createBuffer(2, len, a.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const data = buf.getChannelData(c);
+        for (let i = 0; i < len; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+        }
+      }
+      return buf;
+    }
+
+    function init() {
+      if (ac) return ac;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      try {
+        ac = new AC();
+        const master = ac.createGain();
+        master.gain.value = 0.9;
+
+        const comp = ac.createDynamicsCompressor();
+        comp.threshold.value = -20;
+        comp.knee.value = 24;
+        comp.ratio.value = 5;
+        comp.attack.value = 0.004;
+        comp.release.value = 0.22;
+        comp.connect(master);
+        master.connect(ac.destination);
+
+        dry = ac.createGain();
+        dry.gain.value = 0.92;
+        dry.connect(comp);
+
+        wet = ac.createGain();
+        wet.gain.value = 0.3;
+
+        const conv = ac.createConvolver();
+        conv.buffer = makeImpulse(ac, 0.55, 3.2);
+        wet.connect(conv);
+        conv.connect(comp);
+
+        noiseBuffer = makeNoise(ac, 0.5);
+        return ac;
+      } catch (err) {
+        ac = null;
+        return null;
+      }
+    }
+
+    function ready() {
+      if (S.muted) return null;
+      const a = init();
+      if (!a) return null;
+      if (a.state === 'suspended') a.resume().catch(() => {});
+      return a;
+    }
+
+    function connectOut(a, node) {
+      node.connect(dry);
+      node.connect(wet);
+    }
+
+    function tone(opts) {
+      const a = ready();
+      if (!a) return;
+      try {
+        const dur = opts.dur || 0.1;
+        const t0 = a.currentTime + (opts.delay || 0);
+        const osc = a.createOscillator();
+        const g = a.createGain();
+        osc.type = opts.type || 'sine';
+        osc.frequency.setValueAtTime(opts.freq, t0);
+        if (opts.to) osc.frequency.exponentialRampToValueAtTime(Math.max(25, opts.to), t0 + dur);
+        const peak = opts.gain == null ? 0.12 : opts.gain;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        osc.connect(g);
+        connectOut(a, g);
+        osc.start(t0);
+        osc.stop(t0 + dur + 0.05);
+      } catch (err) {}
+    }
+
+    function noise(opts) {
+      const a = ready();
+      if (!a || !noiseBuffer) return;
+      try {
+        const dur = opts.dur || 0.06;
+        const t0 = a.currentTime + (opts.delay || 0);
+        const src = a.createBufferSource();
+        src.buffer = noiseBuffer;
+        const filt = a.createBiquadFilter();
+        filt.type = opts.filter || 'highpass';
+        filt.frequency.value = opts.freq || 1200;
+        filt.Q.value = opts.q == null ? 0.7 : opts.q;
+        const g = a.createGain();
+        g.gain.setValueAtTime(opts.gain == null ? 0.2 : opts.gain, t0);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        src.connect(filt);
+        filt.connect(g);
+        connectOut(a, g);
+        src.start(t0);
+        src.stop(t0 + dur + 0.02);
+      } catch (err) {}
+    }
+
+    return {
+      unlock() { ready(); },
+      shot() {
+        noise({ dur: 0.07, gain: 0.22, filter: 'lowpass', freq: 1500 });
+        tone({ freq: 150, to: 58, dur: 0.11, type: 'square', gain: 0.12 });
+        tone({ freq: 70, to: 40, dur: 0.16, type: 'sine', gain: 0.22 });
+      },
+      hit(combo) {
+        const f = 1150 + Math.min(combo, 28) * 48;
+        tone({ freq: 132, to: 50, dur: 0.2, type: 'sine', gain: 0.42 });
+        tone({ freq: f, to: f * 1.015, dur: 0.2, type: 'triangle', gain: 0.26 });
+        tone({ freq: f * 1.5, dur: 0.15, type: 'sine', gain: 0.15, delay: 0.004 });
+        tone({ freq: f * 2.02, dur: 0.1, type: 'sine', gain: 0.09, delay: 0.01 });
+        noise({ dur: 0.045, gain: 0.3, filter: 'highpass', freq: 2400 });
+        noise({ dur: 0.09, gain: 0.16, filter: 'bandpass', freq: 900, q: 1.2 });
+      },
+      miss() {
+        tone({ freq: 120, to: 80, dur: 0.09, type: 'sine', gain: 0.07 });
+        noise({ dur: 0.05, gain: 0.06, filter: 'lowpass', freq: 700 });
+      },
+      milestone(n) {
+        const base = 660 + Math.min(n / 10, 6) * 40;
+        [0, 4, 7, 12].forEach((semi, i) => {
+          tone({ freq: base * Math.pow(2, semi / 12), dur: 0.14, type: 'sine', gain: 0.11, delay: i * 0.055 });
+        });
+      },
+      tick(n) {
+        tone({ freq: 520 + (3 - n) * 95, dur: 0.07, type: 'triangle', gain: 0.09 });
+      },
+      go() {
+        tone({ freq: 660, to: 1040, dur: 0.18, type: 'triangle', gain: 0.12 });
+      },
+      ui() {
+        tone({ freq: 880, to: 990, dur: 0.05, type: 'sine', gain: 0.045 });
+      },
+      end() {
+        [523.25, 659.25, 783.99].forEach((f, i) => {
+          tone({ freq: f, dur: 0.16, type: 'triangle', gain: 0.09, delay: i * 0.09 });
+        });
+      },
+      record() {
+        [784, 988, 1175, 1568].forEach((f, i) => {
+          tone({ freq: f, dur: 0.18, type: 'sine', gain: 0.08, delay: i * 0.08 });
+        });
+      },
+      goal() {
+        [660, 880, 1100, 1320, 1760].forEach((f, i) => {
+          tone({ freq: f, dur: 0.22, type: 'triangle', gain: 0.1, delay: i * 0.07 });
+        });
+        tone({ freq: 110, to: 55, dur: 0.45, type: 'sine', gain: 0.16 });
+      }
+    };
+  })();
+
+  /* ============ 背景音乐 ============ */
+  /* 版权原因不内置具体歌曲；把音频放进 music/ 目录，或用 URL 参数指定：
+     ?menuMusic=...（开始界面）  ?resultMusic=...（结算界面） */
+  const Music = (() => {
+    const params = new URLSearchParams(window.location.search);
+    const menuOverride = params.get('menuMusic');
+    const resultOverride = params.get('resultMusic');
+
+    const menuPaths = menuOverride
+      ? [menuOverride]
+      : [
+          'music/we-never-remix.mp3',
+          'music/we-never-remix.ogg',
+          'music/we-never-remix.m4a',
+          'music/we-never-remix.wav',
+          'music/menu.mp3',
+          'music/menu.ogg',
+          'music/menu.m4a',
+          'music/menu.wav'
+        ];
+    const resultPaths = resultOverride
+      ? [resultOverride]
+      : [
+          'music/die-for-you.mp3',
+          'music/die-for-you.ogg',
+          'music/die-for-you.m4a',
+          'music/die-for-you.wav',
+          'music/results.mp3',
+          'music/results.ogg',
+          'music/results.m4a',
+          'music/results.wav'
+        ];
+
+    function makeTrack(paths, volume, loop) {
+      const audio = new Audio();
+      audio.preload = 'auto';
+      audio.loop = loop;
+      audio.volume = volume;
+
+      let index = 0;
+      let available = false;
+      let missing = false;
+
+      function next() {
+        if (index >= paths.length) {
+          missing = true;
+          return;
+        }
+        audio.src = paths[index++];
+        try { audio.load(); } catch (err) {}
+      }
+
+      audio.addEventListener('error', () => {
+        available = false;
+        next();
+        setTimeout(updateMusicUi, 0);
+      });
+      audio.addEventListener('canplay', () => {
+        available = true;
+        missing = false;
+        setTimeout(updateMusicUi, 0);
+      });
+      next();
+
+      return {
+        audio,
+        isAvailable: () => available,
+        isMissing: () => missing
+      };
+    }
+
+    const menuTrack = makeTrack(menuPaths, 0.42, true);
+    const resultTrack = makeTrack(resultPaths, 0.5, false);
+
+    function pause(track) {
+      try { track.audio.pause(); } catch (err) {}
+    }
+
+    function play(track, reset) {
+      if (!S.musicOn) return;
+      const audio = track.audio;
+      if (typeof audio.src !== 'string' || !audio.src) return;
+      if (reset) {
+        try { audio.currentTime = 0; } catch (err) {}
+      }
+      const p = audio.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
+
+    return {
+      playMenu() {
+        if (!S.musicOn) return;
+        pause(resultTrack);
+        if (menuTrack.audio.paused) play(menuTrack, false);
+      },
+      playResult() {
+        if (!S.musicOn) return;
+        pause(menuTrack);
+        play(resultTrack, true);
+      },
+      stopAll() {
+        pause(menuTrack);
+        pause(resultTrack);
+      },
+      setEnabled(on) {
+        S.musicOn = Boolean(on);
+        saveSettings();
+        updateMusicUi();
+        if (!S.musicOn) {
+          this.stopAll();
+        } else {
+          if (S.state === 'menu') this.playMenu();
+          else if (S.state === 'results') this.playResult();
+          setTimeout(() => {
+            if (!this.hasAny()) toast('未找到音乐文件：把音频放进 music/ 目录（见 README）');
+          }, 700);
+        }
+      },
+      hasAny() {
+        return menuTrack.isAvailable() || resultTrack.isAvailable();
+      },
+      info() {
+        return {
+          enabled: S.musicOn,
+          menuSrc: menuTrack.audio.getAttribute('src'),
+          resultSrc: resultTrack.audio.getAttribute('src'),
+          menuAvailable: menuTrack.isAvailable(),
+          resultAvailable: resultTrack.isAvailable(),
+          menuDuration: Number.isFinite(menuTrack.audio.duration) ? Math.round(menuTrack.audio.duration * 10) / 10 : 0,
+          resultDuration: Number.isFinite(resultTrack.audio.duration) ? Math.round(resultTrack.audio.duration * 10) / 10 : 0,
+          menuPaused: menuTrack.audio.paused,
+          resultPaused: resultTrack.audio.paused
+        };
+      }
+    };
+  })();
+
+  function updateMusicUi() {
+    setText(ui.musicBtn, S.musicOn ? '音乐：开' : '音乐：关');
+    ui.musicBtn.setAttribute('aria-pressed', String(S.musicOn));
+    ui.musicBtn.title = '开始界面播放 music/we-never-remix.mp3，结算播放 music/die-for-you.mp3';
+    ui.musicHint.classList.toggle('hidden', !(S.musicOn && !Music.hasAny()));
+  }
+
+  function toggleMusic() {
+    Music.setEnabled(!S.musicOn);
+    Sound.ui();
+  }
+
+  /* ============ 相机 / 投影 ============ */
+  function getBasis() {
+    const { yaw, pitch } = S.camera;
+    const cp = Math.cos(pitch);
+    const sp = Math.sin(pitch);
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
+    return {
+      forward: { x: sy * cp, y: sp, z: cy * cp },
+      right: { x: cy, y: 0, z: -sy },
+      up: { x: -sy * sp, y: cp, z: -cy * sp }
+    };
+  }
+
+  function toCam(p, B) {
+    const dx = p.x - S.camera.x;
+    const dy = p.y - S.camera.y;
+    const dz = p.z - S.camera.z;
+    return {
+      x: dx * B.right.x + dy * B.right.y + dz * B.right.z,
+      y: dx * B.up.x + dy * B.up.y + dz * B.up.z,
+      z: dx * B.forward.x + dy * B.forward.y + dz * B.forward.z
+    };
+  }
+
+  function projectCam(c) {
+    if (!c || c.z <= NEAR) return null;
+    return {
+      x: W / 2 + (c.x / c.z) * focal,
+      y: H / 2 - (c.y / c.z) * focal,
+      z: c.z,
+      scale: focal / c.z
+    };
+  }
+
+  function projectPoint(p, B) {
+    return projectCam(toCam(p, B));
+  }
+
+  function raycastTargets() {
+    const B = getBasis();
+    let best = null;
+    for (const t of S.targets) {
+      const vx = t.x - S.camera.x;
+      const vy = t.y - S.camera.y;
+      const vz = t.z - S.camera.z;
+      const along = vx * B.forward.x + vy * B.forward.y + vz * B.forward.z;
+      if (along <= 0.45) continue;
+      const px = vx - B.forward.x * along;
+      const py = vy - B.forward.y * along;
+      const pz = vz - B.forward.z * along;
+      if (px * px + py * py + pz * pz <= t.r * t.r) {
+        if (!best || along < best.along) best = { target: t, along };
+      }
+    }
+    return best;
+  }
+
+  function traceTunnel(dir) {
+    const o = S.camera;
+    let bestT = Infinity;
+    let point = null;
+
+    // 左右墙
+    for (const wx of [-TUNNEL.halfW, TUNNEL.halfW]) {
+      if (Math.abs(dir.x) < 1e-6) continue;
+      const t = (wx - o.x) / dir.x;
+      if (t > 0.2 && t < bestT) {
+        const y = o.y + dir.y * t;
+        const z = o.z + dir.z * t;
+        if (y >= -0.05 && y <= TUNNEL.height + 0.05 && z >= -0.05 && z <= TUNNEL.depth + 0.05) {
+          bestT = t;
+          point = { x: wx, y, z };
+        }
+      }
+    }
+
+    // 地板 / 天花板
+    for (const wy of [0, TUNNEL.height]) {
+      if (Math.abs(dir.y) < 1e-6) continue;
+      const t = (wy - o.y) / dir.y;
+      if (t > 0.2 && t < bestT) {
+        const x = o.x + dir.x * t;
+        const z = o.z + dir.z * t;
+        if (Math.abs(x) <= TUNNEL.halfW + 0.05 && z >= -0.05 && z <= TUNNEL.depth + 0.05) {
+          bestT = t;
+          point = { x, y: wy, z };
+        }
+      }
+    }
+
+    // 尽头墙
+    if (dir.z > 1e-6) {
+      const t = (TUNNEL.depth - o.z) / dir.z;
+      if (t > 0.2 && t < bestT) {
+        const x = o.x + dir.x * t;
+        const y = o.y + dir.y * t;
+        if (Math.abs(x) <= TUNNEL.halfW && y >= 0 && y <= TUNNEL.height) {
+          bestT = t;
+          point = { x, y, z: TUNNEL.depth };
+        }
+      }
+    }
+
+    return point;
+  }
+
+  /* ============ 特效（世界坐标） ============ */
+  function spawnBurst(origin, color, count, power) {
+    const n = count || 14;
+    const p = power || 1;
+    for (let i = 0; i < n; i++) {
+      const theta = rand(0, Math.PI * 2);
+      const phi = rand(-0.9, 0.9);
+      const speed = rand(2.5, 10) * p;
+      const life = rand(0.28, 0.6);
+      S.particles.push({
+        x: origin.x,
+        y: origin.y,
+        z: origin.z,
+        vx: Math.cos(theta) * Math.cos(phi) * speed,
+        vy: Math.sin(phi) * speed + rand(1, 4),
+        vz: Math.sin(theta) * Math.cos(phi) * speed,
+        size: rand(0.018, 0.052),
+        color,
+        life,
+        maxLife: life
+      });
+    }
+  }
+
+  function addRipple(origin, color, startR, maxR, width) {
+    const life = 0.42;
+    S.ripples.push({
+      x: origin.x,
+      y: origin.y,
+      z: origin.z,
+      r: startR,
+      maxR,
+      color,
+      width: width || 2.2,
+      life,
+      maxLife: life
+    });
+  }
+
+  function addFloater(origin, text, color, size) {
+    S.floaters.push({
+      x: origin.x,
+      y: origin.y,
+      z: origin.z,
+      text,
+      color,
+      size: size || 0.45,
+      life: 0.9,
+      maxLife: 0.9
+    });
+  }
+
+  function updateEffects(dt) {
+    for (let i = S.particles.length - 1; i >= 0; i--) {
+      const p = S.particles[i];
+      p.life -= dt;
+      if (p.life <= 0) { S.particles.splice(i, 1); continue; }
+      p.vy -= 13 * dt;
+      const drag = Math.max(0, 1 - 1.8 * dt);
+      p.vx *= drag;
+      p.vy *= drag;
+      p.vz *= drag;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+    }
+
+    for (let i = S.ripples.length - 1; i >= 0; i--) {
+      const r = S.ripples[i];
+      r.life -= dt;
+      if (r.life <= 0) { S.ripples.splice(i, 1); continue; }
+      const speed = (r.maxR - r.maxR * 0.2) / 0.42;
+      r.r = Math.min(r.maxR, r.r + speed * dt);
+    }
+
+    for (let i = S.floaters.length - 1; i >= 0; i--) {
+      const f = S.floaters[i];
+      f.life -= dt;
+      if (f.life <= 0) { S.floaters.splice(i, 1); continue; }
+      f.y += 0.7 * dt;
+    }
+  }
+
+  /* ============ 靶子 ============ */
+  function effectiveTargetCount() {
+    if (S.targetCountMode === 'manual') {
+      return clamp(Math.round(S.targetCount), 1, MAX_TARGETS);
+    }
+    return S.mode === 'frenzy' ? DIFFICULTY[S.difficulty].slots : 1;
+  }
+
+  function slotsForMode() {
+    return effectiveTargetCount();
+  }
+
+  function spawnTarget() {
+    const d = DIFFICULTY[S.difficulty];
+    const radius = d.radius * (S.mode === 'frenzy' ? 0.9 : 1);
+    const B = getBasis();
+    const count = effectiveTargetCount();
+    const hHalf = Math.atan(Math.tan(FOV_Y / 2) * (W / Math.max(1, H)));
+    // 靶子越多，出生角度越分散，避免全挤在准星附近
+    const spread = 0.38 + Math.max(0, count - 3) * 0.035;
+    const maxYawOff = Math.min(spread, hHalf * 0.85);
+    const maxPitchOff = Math.min(0.13 + Math.max(0, count - 3) * 0.012, 0.22);
+
+    let best = null;
+    let bestDist = -1;
+
+    for (let attempt = 0; attempt < 22; attempt++) {
+      const depth = rand(8.5, 27);
+      const yawOff = rand(-maxYawOff, maxYawOff);
+      const pitchOff = rand(-maxPitchOff, maxPitchOff);
+
+      const p = {
+        x: S.camera.x + B.forward.x * depth + B.right.x * Math.tan(yawOff) * depth + B.up.x * Math.tan(pitchOff) * depth,
+        y: S.camera.y + B.forward.y * depth + B.right.y * Math.tan(yawOff) * depth + B.up.y * Math.tan(pitchOff) * depth,
+        z: S.camera.z + B.forward.z * depth + B.right.z * Math.tan(yawOff) * depth + B.up.z * Math.tan(pitchOff) * depth
+      };
+
+      p.x = clamp(p.x, -TUNNEL.halfW + radius + 0.35, TUNNEL.halfW - radius - 0.35);
+      p.y = clamp(p.y, radius + 0.45, TUNNEL.height - radius - 0.45);
+      p.z = clamp(p.z, 5.5, TUNNEL.depth - 8);
+
+      const toT = toCam(p, B);
+      if (toT.z < 2.5) continue;
+
+      let minDist = Infinity;
+      for (const t of S.targets) {
+        const dist = Math.hypot(t.x - p.x, t.y - p.y, t.z - p.z);
+        if (dist < minDist) minDist = dist;
+      }
+      if (S.lastSpawn) {
+        const dist = Math.hypot(S.lastSpawn.x - p.x, S.lastSpawn.y - p.y, S.lastSpawn.z - p.z) * 0.8;
+        if (dist < minDist) minDist = dist;
+      }
+
+      if (minDist > bestDist) {
+        bestDist = minDist;
+        best = p;
+      }
+      if (bestDist > 4.5) break;
+    }
+
+    if (!best) return;
+
+    // 固定人口：靶子不会自然消失，只有被打中才会补一个新的
+    const moving = S.mode !== 'precision';
+    const speed = moving ? d.speed * (S.mode === 'frenzy' ? 1.1 : 0.9) : 0;
+    const angle = rand(0, Math.PI * 2);
+    const vx = Math.cos(angle) * speed;
+    const vz = Math.sin(angle) * speed * 0.55;
+    const vy = rand(-0.4, 0.4) * speed;
+
+    S.targets.push({
+      x: best.x,
+      y: best.y,
+      z: best.z,
+      r: radius,
+      born: S.elapsed,
+      vx,
+      vy,
+      vz,
+      bonusWindow: d.bonusWindow,
+      phase: rand(0, Math.PI * 2)
+    });
+    S.lastSpawn = { x: best.x, y: best.y, z: best.z };
+  }
+
+  function ensureTargets() {
+    const slots = slotsForMode();
+    let guard = 0;
+    while (S.targets.length < slots && guard < 8) {
+      spawnTarget();
+      guard++;
+    }
+  }
+
+  /* ============ HUD / 记录 ============ */
+  function accuracy() {
+    const total = S.hits + S.misses;
+    return total ? (S.hits / total) * 100 : 0;
+  }
+
+  function goalIsCount() {
+    return S.goalMode === 'count';
+  }
+
+  function goalTarget() {
+    return goalIsCount() ? S.goalCount : S.duration;
+  }
+
+  function updateHud() {
+    setText(ui.score, formatScore(S.score));
+    setText(ui.hits, String(S.hits));
+    setText(ui.misses, String(S.misses));
+    setText(ui.acc, S.hits + S.misses ? accuracy().toFixed(1) + '%' : '--');
+    setText(ui.combo, String(S.combo));
+
+    if (goalIsCount()) {
+      const shown = Math.min(S.hits, S.goalCount);
+      setText(ui.time, String(shown));
+      setText(ui.timeUnit, ' / ' + S.goalCount);
+      const ratio = S.goalCount > 0 ? clamp(shown / S.goalCount, 0, 1) : 0;
+      ui.timerFill.style.width = (ratio * 100).toFixed(2) + '%';
+      ui.timerWrap.classList.remove('danger');
+    } else {
+      setText(ui.time, Math.max(0, S.timeLeft).toFixed(1));
+      setText(ui.timeUnit, 's');
+      const ratio = S.duration > 0 ? clamp(S.timeLeft / S.duration, 0, 1) : 0;
+      ui.timerFill.style.width = (ratio * 100).toFixed(2) + '%';
+      ui.timerWrap.classList.toggle('danger', S.timeLeft <= 5.2 && S.state === 'playing');
+    }
+
+    ui.combo.classList.toggle('hot', S.combo >= 5);
+  }
+
+  function bestKey() {
+    const goal = goalIsCount() ? ('count' + S.goalCount) : ('time' + S.duration);
+    return S.mode + '.' + S.difficulty + '.' + goal;
+  }
+
+  function refreshBest() {
+    const rec = (loadStore().best || {})[bestKey()];
+    if (rec && rec.score > 0) {
+      ui.menuBest.textContent = formatScore(rec.score) + ' · ' + rec.acc + '%';
+      ui.menuBest.title = '最高连击 ' + rec.combo;
+    } else {
+      ui.menuBest.textContent = '--';
+      ui.menuBest.removeAttribute('title');
+    }
+  }
+
+  /* ============ 历史战绩 ============ */
+  function readHistory() {
+    const list = loadStore().history;
+    return Array.isArray(list) ? list : [];
+  }
+
+  function recordHistoryEntry(entry) {
+    const store = loadStore();
+    const list = Array.isArray(store.history) ? store.history : [];
+    list.unshift(entry);
+    store.history = list.slice(0, 100);
+    saveStore(store);
+  }
+
+  function formatHistoryDate(ts) {
+    const d = new Date(ts);
+    const pad = (n) => String(n).padStart(2, '0');
+    return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function historyEntryTitle(e) {
+    const mode = (MODES[e.mode] || {}).label || e.mode || '?';
+    const diff = (DIFFICULTY[e.difficulty] || {}).label || e.difficulty || '?';
+    const goal = e.goalMode === 'count' ? (e.goalCount + ' 球') : ((e.duration || e.played || 0) + 's');
+    const targets = e.targets ? (e.targets + ' 靶') : '';
+    return mode + ' · ' + diff + ' · ' + goal + (targets ? ' · ' + targets : '');
+  }
+
+  function renderHistory() {
+    const list = readHistory();
+    const total = list.length;
+    const hits = list.reduce((sum, e) => sum + (e.hits || 0), 0);
+    const avgAcc = total ? list.reduce((sum, e) => sum + (e.acc || 0), 0) / total : 0;
+    const best = total ? Math.max.apply(null, list.map((e) => e.score || 0)) : 0;
+    const maxCombo = total ? Math.max.apply(null, list.map((e) => e.maxCombo || 0)) : 0;
+    const reacts = list.map((e) => e.avgMs || 0).filter((v) => v > 0);
+    const avgReact = reacts.length ? reacts.reduce((a, b) => a + b, 0) / reacts.length : 0;
+
+    setText(ui.histTotal, String(total));
+    setText(ui.histHits, formatScore(hits));
+    setText(ui.histAcc, total ? avgAcc.toFixed(1) + '%' : '--');
+    setText(ui.histBest, formatScore(best));
+    setText(ui.histCombo, '×' + maxCombo);
+    setText(ui.histReact, avgReact ? Math.round(avgReact) + ' ms' : '—');
+
+    ui.historyChart.innerHTML = '';
+    const recent = list.slice(0, 20).reverse();
+    if (recent.length) {
+      const maxScore = Math.max(1, Math.max.apply(null, recent.map((e) => e.score || 0)));
+      for (const e of recent) {
+        const bar = document.createElement('div');
+        bar.className = 'hbar';
+        bar.style.height = Math.max(3, Math.round(((e.score || 0) / maxScore) * 100)) + '%';
+        bar.title = formatHistoryDate(e.ts) + ' · ' + historyEntryTitle(e) + ' · ' + formatScore(e.score || 0) + ' 分 · ' + (e.acc || 0) + '%';
+        ui.historyChart.appendChild(bar);
+      }
+    }
+
+    ui.historyList.innerHTML = '';
+    if (!total) {
+      const empty = document.createElement('div');
+      empty.className = 'history-empty';
+      empty.textContent = '还没有战绩，先打一局吧。';
+      ui.historyList.appendChild(empty);
+      return;
+    }
+
+    for (const e of list.slice(0, 20)) {
+      const row = document.createElement('div');
+      row.className = 'history-row';
+
+      const left = document.createElement('div');
+      left.className = 'h-left';
+      const date = document.createElement('div');
+      date.className = 'h-date';
+      date.textContent = formatHistoryDate(e.ts);
+      const desc = document.createElement('div');
+      desc.className = 'h-desc';
+      desc.textContent = historyEntryTitle(e);
+      left.appendChild(date);
+      left.appendChild(desc);
+
+      const right = document.createElement('div');
+      right.className = 'h-right';
+      const score = document.createElement('div');
+      score.className = 'h-score';
+      score.textContent = formatScore(e.score || 0);
+      const sub = document.createElement('div');
+      sub.className = 'h-sub';
+      sub.textContent = (e.acc || 0) + '% · ×' + (e.maxCombo || 0);
+      right.appendChild(score);
+      right.appendChild(sub);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      ui.historyList.appendChild(row);
+    }
+  }
+
+  function openHistory() {
+    renderHistory();
+    historyOpen = true;
+    show(ui.history);
+  }
+
+  function closeHistory() {
+    if (!historyOpen) return;
+    historyOpen = false;
+    hide(ui.history);
+    resetHistoryClear();
+  }
+
+  function resetHistoryClear() {
+    clearArmed = false;
+    clearTimeout(clearTimer);
+    ui.btnHistoryClear.textContent = '清空历史';
+  }
+
+  function handleHistoryClear() {
+    if (!readHistory().length) return;
+    if (!clearArmed) {
+      clearArmed = true;
+      ui.btnHistoryClear.textContent = '再次点击确认清空';
+      clearTimeout(clearTimer);
+      clearTimer = setTimeout(resetHistoryClear, 2500);
+      return;
+    }
+    resetHistoryClear();
+    const store = loadStore();
+    store.history = [];
+    saveStore(store);
+    renderHistory();
+    Sound.ui();
+    toast('历史战绩已清空');
+  }
+
+  function saveSettings(extra) {
+    const store = loadStore();
+    store.settings = Object.assign({
+      mode: S.mode,
+      difficulty: S.difficulty,
+      duration: S.duration,
+      goalMode: S.goalMode,
+      goalCount: S.goalCount,
+      targetCountMode: S.targetCountMode,
+      targetCount: S.targetCount,
+      sensitivity: S.sensitivity,
+      muted: S.muted,
+      musicOn: S.musicOn
+    }, extra || {});
+    saveStore(store);
+  }
+
+  function saveBest(key, score, acc, combo) {
+    const store = loadStore();
+    store.best = store.best || {};
+    store.best[key] = { score, acc: Math.round(acc * 10) / 10, combo, date: Date.now() };
+    store.settings = {
+      mode: S.mode,
+      difficulty: S.difficulty,
+      duration: S.duration,
+      goalMode: S.goalMode,
+      goalCount: S.goalCount,
+      targetCountMode: S.targetCountMode,
+      targetCount: S.targetCount,
+      sensitivity: S.sensitivity,
+      muted: S.muted,
+      musicOn: S.musicOn
+    };
+    saveStore(store);
+  }
+
+  /* ============ 音效 / 灵敏度 UI ============ */
+  function updateSoundUi() {
+    ui.soundBtn.classList.toggle('muted', S.muted);
+    ui.soundBtn.setAttribute('aria-pressed', String(!S.muted));
+    ui.soundBtn.setAttribute('aria-label', S.muted ? '开启音效' : '关闭音效');
+    setText(ui.soundMenuBtn, S.muted ? '音效：关' : '音效：开');
+  }
+
+  function toggleMute() {
+    S.muted = !S.muted;
+    updateSoundUi();
+    saveSettings();
+    if (!S.muted) Sound.ui();
+    toast(S.muted ? '音效已关闭' : '音效已开启');
+  }
+
+  let toastTimer = 0;
+  function toast(text) {
+    ui.toast.textContent = text;
+    ui.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => ui.toast.classList.remove('show'), 1500);
+  }
+
+  function updateSensUi() {
+    ui.sensSlider.value = String(S.sensitivity);
+    ui.pauseSens.value = String(S.sensitivity);
+    ui.sensValue.textContent = S.sensitivity.toFixed(2);
+    ui.pauseSensValue.textContent = S.sensitivity.toFixed(2);
+  }
+
+  function setSensitivity(value, silent) {
+    S.sensitivity = clamp(Number(value) || 1, 0.2, 3);
+    updateSensUi();
+    saveSettings();
+    if (!silent) Sound.ui();
+  }
+
+  function nudgeSensitivity(delta) {
+    setSensitivity(Math.round((S.sensitivity + delta) * 100) / 100, false);
+    toast('灵敏度 ' + S.sensitivity.toFixed(2));
+  }
+
+  function updateCountUi() {
+    const auto = S.targetCountMode !== 'manual';
+    const count = effectiveTargetCount();
+    ui.countValue.textContent = (auto ? '自动 · ' : '') + count;
+    ui.countSlider.value = String(count);
+    ui.countAuto.classList.toggle('active', auto);
+    ui.countAuto.setAttribute('aria-pressed', String(auto));
+    ui.countSlider.setAttribute('aria-valuetext', (auto ? '自动，' : '') + count + ' 个');
+  }
+
+  function setTargetCount(value) {
+    S.targetCountMode = 'manual';
+    S.targetCount = clamp(Math.round(Number(value) || 1), 1, MAX_TARGETS);
+    updateCountUi();
+    saveSettings();
+  }
+
+  function setTargetCountAuto() {
+    S.targetCountMode = 'auto';
+    updateCountUi();
+    saveSettings();
+    toast('靶球数量：自动（' + effectiveTargetCount() + ' 个）');
+  }
+
+  function updateGoalUi() {
+    const countMode = goalIsCount();
+    ui.goalValue.textContent = countMode ? ('命中 ' + S.goalCount + ' 球') : ('计时 · ' + S.duration + 's');
+    $$('#goal-group .chip').forEach((btn) => {
+      const active = countMode ? Number(btn.dataset.goal) === S.goalCount : btn.dataset.goal === 'time';
+      btn.classList.toggle('active', active);
+    });
+    ui.durationField.classList.toggle('is-dim', countMode);
+  }
+
+  function syncSettingsUi() {
+    $$('.mode').forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === S.mode));
+    $$('#diff-group button').forEach((btn) => btn.classList.toggle('active', btn.dataset.diff === S.difficulty));
+    $$('#time-group button').forEach((btn) => btn.classList.toggle('active', Number(btn.dataset.time) === S.duration));
+    updateSensUi();
+    updateCountUi();
+    updateGoalUi();
+    updateMusicUi();
+    updateSoundUi();
+  }
+
+  /* ============ 指针锁定 ============ */
+  function requestLock() {
+    if (S.pointerLocked) return;
+    if (!canvas.requestPointerLock) return;
+
+    const attempt = (options) => {
+      let p = null;
+      try {
+        p = options ? canvas.requestPointerLock(options) : canvas.requestPointerLock();
+      } catch (err) {
+        return false;
+      }
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          // unadjustedMovement 不被支持时，退回普通指针锁定
+          try {
+            const p2 = canvas.requestPointerLock();
+            if (p2 && typeof p2.catch === 'function') p2.catch(() => {});
+          } catch (e) {}
+        });
+      }
+      return true;
+    };
+
+    if (!attempt({ unadjustedMovement: true })) attempt(null);
+  }
+
+  function exitLock() {
+    if (document.pointerLockElement) {
+      try { document.exitPointerLock(); } catch (err) {}
+    }
+  }
+
+  function updateControlHint() {
+    if (S.state !== 'playing') return;
+    if (S.sawTouch || coarsePointer) {
+      setText(ui.hint, '拖动屏幕瞄准 · 轻点射击 · 右上角暂停');
+    } else if (S.pointerLocked) {
+      setText(ui.hint, '左键射击 · Esc 退出并暂停 · M 静音');
+    } else {
+      setText(ui.hint, '点击画面锁定鼠标 · 左键射击 · Esc 暂停');
+    }
+  }
+
+  /* ============ 玩法流程 ============ */
+  function resetGameState() {
+    S.elapsed = 0;
+    S.timeLeft = S.duration;
+    S.goalDoneAt = 0;
+    S.score = 0;
+    S.hits = 0;
+    S.misses = 0;
+    S.combo = 0;
+    S.maxCombo = 0;
+    S.reactionSum = 0;
+    S.reactionCount = 0;
+    S.targets = [];
+    S.particles = [];
+    S.ripples = [];
+    S.floaters = [];
+    S.lastSpawn = null;
+    S.shake = 0;
+    S.aimKick = 0;
+    S.lookVel.x = 0;
+    S.lookVel.y = 0;
+    S.hitMarkerAt = -1;
+    S.flashAt = -1;
+    S.shotAt = -1;
+    S.tracer = null;
+    S.camera.yaw = 0;
+    S.camera.pitch = 0;
+  }
+
+  function startGame() {
+    clearTimeout(toastTimer);
+    ui.toast.classList.remove('show');
+    hide(ui.goalBanner);
+    ui.goalBanner.classList.remove('show');
+    resetGameState();
+    S.state = 'countdown';
+    S.countdownStart = performance.now();
+    S.countdownShown = -1;
+
+    hide(ui.menu);
+    hide(ui.results);
+    hide(ui.pause);
+    hide(ui.hint);
+    show(ui.hud);
+    show(ui.countdown);
+    ui.countdownNum.textContent = String(COUNTDOWN_FROM);
+    document.body.classList.add('aiming');
+    updateHud();
+    refreshBest();
+    saveSettings();
+    Sound.unlock();
+    Music.playMenu();
+    requestLock();
+  }
+
+  function beginPlaying() {
+    S.state = 'playing';
+    hide(ui.countdown);
+    show(ui.hint);
+    S.targets = [];
+    ensureTargets();
+    updateHud();
+    updateControlHint();
+    flashScreen();
+    Sound.go();
+    Music.stopAll();
+  }
+
+  function pauseGame() {
+    if (S.state !== 'playing' || S.goalDoneAt) return;
+    S.state = 'paused';
+    hide(ui.hint);
+    show(ui.pause);
+    document.body.classList.remove('aiming');
+    exitLock();
+  }
+
+  function resumeGame() {
+    if (S.state !== 'paused') return;
+    S.state = 'playing';
+    hide(ui.pause);
+    show(ui.hint);
+    document.body.classList.add('aiming');
+    updateControlHint();
+    requestLock();
+  }
+
+  function showMenu() {
+    S.state = 'menu';
+    document.body.classList.remove('aiming');
+    hide(ui.hud);
+    hide(ui.results);
+    hide(ui.pause);
+    hide(ui.countdown);
+    hide(ui.hint);
+    hide(ui.goalBanner);
+    ui.toast.classList.remove('show');
+    show(ui.menu);
+    refreshBest();
+    syncSettingsUi();
+    updateGoalUi();
+    Music.playMenu();
+    exitLock();
+  }
+
+  function rankTitle(acc) {
+    if (acc >= 92) return '神枪手';
+    if (acc >= 82) return '稳定发挥';
+    if (acc >= 65) return '手感在线';
+    if (acc >= 42) return '继续热手';
+    return '先慢下来';
+  }
+
+  function endGame() {
+    if (S.state !== 'playing') return;
+    S.state = 'results';
+    document.body.classList.remove('aiming');
+    hide(ui.hint);
+    hide(ui.hud);
+    exitLock();
+
+    const acc = accuracy();
+    const total = S.hits + S.misses;
+    const avgMs = S.reactionCount ? (S.reactionSum / S.reactionCount) * 1000 : 0;
+    const played = Math.max(0.5, goalIsCount() ? S.elapsed : Math.min(S.duration, S.elapsed));
+    const hps = S.hits / played;
+    const key = bestKey();
+    const prev = (loadStore().best || {})[key];
+    const isRecord = S.score > 0 && (!prev || S.score > prev.score);
+
+    if (isRecord) saveBest(key, S.score, acc, S.maxCombo);
+
+    recordHistoryEntry({
+      ts: Date.now(),
+      mode: S.mode,
+      difficulty: S.difficulty,
+      goalMode: S.goalMode,
+      goalCount: S.goalCount,
+      duration: S.duration,
+      targets: effectiveTargetCount(),
+      score: S.score,
+      hits: S.hits,
+      misses: S.misses,
+      acc: Math.round(acc * 10) / 10,
+      maxCombo: S.maxCombo,
+      avgMs: Math.round(avgMs),
+      hps: Math.round(hps * 100) / 100,
+      played: Math.round(played * 10) / 10
+    });
+
+    setText(ui.resScore, formatScore(S.score));
+    setText(ui.resTitle, rankTitle(acc));
+    setText(ui.resHits, String(S.hits));
+    setText(ui.resMisses, String(S.misses));
+    setText(ui.resAcc, total ? acc.toFixed(1) + '%' : '--');
+    setText(ui.resCombo, '×' + S.maxCombo);
+    setText(ui.resReact, avgMs ? Math.round(avgMs) + ' ms' : '—');
+    setText(ui.resHps, hps.toFixed(2));
+    setText(ui.resBest, formatScore(Math.max(prev ? prev.score : 0, S.score)));
+    ui.resBadge.classList.toggle('hidden', !isRecord);
+
+    show(ui.results);
+    updateHud();
+    Sound.end();
+    Music.playResult();
+    if (isRecord) {
+      setTimeout(() => Sound.record(), 420);
+      flashScreen();
+    }
+  }
+
+  /* ============ 射击 ============ */
+  function shoot() {
+    if (S.state !== 'playing' || S.goalDoneAt) return;
+
+    Sound.shot();
+    const now = performance.now();
+    S.shotAt = now;
+    S.aimKick = 1;
+
+    const B = getBasis();
+    const hit = raycastTargets();
+
+    if (hit) {
+      registerHit(hit.target);
+      return;
+    }
+
+    // 空枪：打在墙面 / 地板 / 天花板上，留一串火花
+    const point = traceTunnel(B.forward);
+    if (point) {
+      spawnBurst(point, '#9fe9ff', 7, 0.55);
+      addRipple(point, '#7fd8ff', 0.08, 0.45, 1.8);
+      S.tracer = {
+        from: muzzlePoint(),
+        to: (projectPoint(point, B) || { x: W / 2, y: H / 2 }),
+        at: now
+      };
+    } else {
+      S.tracer = { from: muzzlePoint(), to: { x: W / 2, y: H / 2 }, at: now };
+    }
+
+    registerMiss();
+    Sound.miss();
+    updateHud();
+  }
+
+  function registerMiss() {
+    S.misses++;
+    S.combo = 0;
+    S.shake = Math.max(S.shake, 4.5);
+    updateHud();
+  }
+
+  function registerHit(target) {
+    const idx = S.targets.indexOf(target);
+    if (idx !== -1) S.targets.splice(idx, 1);
+
+    const age = Math.max(0, S.elapsed - target.born);
+    const d = DIFFICULTY[S.difficulty];
+    const window = target.bonusWindow || d.bonusWindow;
+    const speedRatio = clamp(1 - age / window, 0, 1);
+
+    S.combo++;
+    S.maxCombo = Math.max(S.maxCombo, S.combo);
+
+    const mult = 1 + Math.min(S.combo - 1, 40) * 0.025;
+    const points = Math.max(10, Math.round((100 + 120 * speedRatio) * mult * d.scoreMul));
+
+    S.score += points;
+    S.hits++;
+    S.reactionSum += age;
+    S.reactionCount++;
+
+    const color = S.combo >= 10 ? '#ffd166' : '#8ff8ff';
+    const origin = { x: target.x, y: target.y, z: target.z };
+    spawnBurst(origin, color, 18 + Math.min(S.combo, 14), 1 + Math.min(S.combo, 10) * 0.06);
+    addRipple(origin, color, target.r * 0.7, target.r * 2.2, 2.4);
+    addFloater({ x: target.x, y: target.y + target.r + 0.18, z: target.z }, '+' + points, '#eafcff', 0.46);
+    if (mult > 1.08) {
+      addFloater({ x: target.x, y: target.y + target.r + 0.55, z: target.z }, '×' + mult.toFixed(2), '#ffd166', 0.3);
+    }
+
+    const B = getBasis();
+    const projected = projectPoint(target, B);
+    S.tracer = {
+      from: muzzlePoint(),
+      to: projected ? { x: projected.x, y: projected.y } : { x: W / 2, y: H / 2 },
+      at: performance.now()
+    };
+
+    S.hitMarkerAt = performance.now();
+    S.flashAt = performance.now();
+    S.shake = Math.max(S.shake, 5.5);
+
+    Sound.hit(S.combo);
+    if (S.combo % 10 === 0) Sound.milestone(S.combo);
+    popScore();
+
+    ensureTargets();
+    updateHud();
+
+    if (goalIsCount() && S.hits >= S.goalCount && !S.goalDoneAt) {
+      S.goalDoneAt = performance.now();
+      Sound.goal();
+      flashScreen();
+      showGoalBanner('目标达成 · ' + S.goalCount + ' 球');
+    }
+  }
+
+  let goalBannerTimer = 0;
+  function showGoalBanner(text) {
+    ui.goalBanner.textContent = text;
+    ui.goalBanner.classList.remove('hidden');
+    ui.goalBanner.classList.remove('show');
+    void ui.goalBanner.offsetWidth;
+    ui.goalBanner.classList.add('show');
+    clearTimeout(goalBannerTimer);
+    goalBannerTimer = setTimeout(() => {
+      ui.goalBanner.classList.remove('show');
+      ui.goalBanner.classList.add('hidden');
+    }, 1000);
+  }
+
+  function muzzlePoint() {
+    return getMuzzle();
+  }
+
+  function popScore() {
+    if (ui.score && typeof ui.score.animate === 'function') {
+      ui.score.animate(
+        [{ transform: 'scale(1.16)' }, { transform: 'scale(1)' }],
+        { duration: 150, easing: 'ease-out' }
+      );
+    }
+  }
+
+  function flashScreen() {
+    ui.flash.classList.remove('fire');
+    void ui.flash.offsetWidth;
+    ui.flash.classList.add('fire');
+  }
+
+  function applyLook(dx, dy) {
+    const k = BASE_DEG_PER_PX * S.sensitivity * DEG;
+    S.camera.yaw = clamp(S.camera.yaw + dx * k, -YAW_LIMIT, YAW_LIMIT);
+    S.camera.pitch = clamp(S.camera.pitch - dy * k, -PITCH_LIMIT, PITCH_LIMIT);
+    S.lookVel.x = clamp(S.lookVel.x + dx * 0.16, -50, 50);
+    S.lookVel.y = clamp(S.lookVel.y + dy * 0.16, -50, 50);
+  }
+
+  /* ============ 主循环 ============ */
+  let lastFrame = performance.now();
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = clamp((now - lastFrame) / 1000, 0, 0.1);
+    lastFrame = now;
+    update(dt, now);
+    render(now);
+  }
+
+  function update(dt, now) {
+    updateEffects(dt);
+
+    S.shake = Math.max(0, S.shake - 30 * dt);
+    S.aimKick = Math.max(0, S.aimKick - 9 * dt);
+    const damp = Math.max(0, 1 - 10 * dt);
+    S.lookVel.x *= damp;
+    S.lookVel.y *= damp;
+
+    if (S.state === 'menu') {
+      S.camera.yaw = Math.sin(now / 6400) * 0.1;
+      S.camera.pitch = Math.sin(now / 8300) * 0.035;
+      return;
+    }
+
+    if (S.state === 'countdown') {
+      const remain = COUNTDOWN_FROM - (now - S.countdownStart) / 1000;
+      const n = Math.ceil(remain - 1e-6);
+      if (n !== S.countdownShown) {
+        S.countdownShown = n;
+        if (n > 0) {
+          ui.countdownNum.textContent = String(n);
+          ui.countdownNum.style.animation = 'none';
+          void ui.countdownNum.offsetWidth;
+          ui.countdownNum.style.animation = '';
+          Sound.tick(n);
+        }
+      }
+      if (remain <= 0) beginPlaying();
+      return;
+    }
+
+    if (S.state !== 'playing') return;
+
+    S.elapsed += dt;
+    if (!goalIsCount()) S.timeLeft = Math.max(0, S.duration - S.elapsed);
+
+    moveTargets(dt);
+    ensureTargets();
+
+    if (goalIsCount()) {
+      if (S.goalDoneAt && now - S.goalDoneAt > 950) {
+        endGame();
+        return;
+      }
+    } else if (S.timeLeft <= 0) {
+      endGame();
+      return;
+    }
+    updateHud();
+  }
+
+  function moveTargets(dt) {
+    const zMin = 7;
+    const zMax = TUNNEL.depth - 8;
+    for (const t of S.targets) {
+      if (!t.vx && !t.vy && !t.vz) continue;
+
+      t.x += t.vx * dt;
+      t.y += t.vy * dt;
+      t.z += t.vz * dt;
+
+      const xLimit = TUNNEL.halfW - t.r - 0.35;
+      const yMin = t.r + 0.45;
+      const yMax = TUNNEL.height - t.r - 0.45;
+
+      if (t.x > xLimit) { t.x = xLimit; t.vx = -Math.abs(t.vx); }
+      if (t.x < -xLimit) { t.x = -xLimit; t.vx = Math.abs(t.vx); }
+      if (t.y > yMax) { t.y = yMax; t.vy = -Math.abs(t.vy); }
+      if (t.y < yMin) { t.y = yMin; t.vy = Math.abs(t.vy); }
+      if (t.z > zMax) { t.z = zMax; t.vz = -Math.abs(t.vz); }
+      if (t.z < zMin) { t.z = zMin; t.vz = Math.abs(t.vz); }
+    }
+  }
+
+  /* ============ 渲染：背景 / 靶场 ============ */
+  function paintBackground(now) {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#060a12');
+    g.addColorStop(0.55, '#04070d');
+    g.addColorStop(1, '#020408');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    const rg = ctx.createRadialGradient(W * 0.5, H * 0.45, 0, W * 0.5, H * 0.45, Math.max(W, H) * 0.65);
+    rg.addColorStop(0, 'rgba(35, 110, 190, 0.17)');
+    rg.addColorStop(0.55, 'rgba(20, 60, 120, 0.05)');
+    rg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawLine3D(p1, p2, B, color, width) {
+    let a = toCam(p1, B);
+    let b = toCam(p2, B);
+    if (a.z <= NEAR && b.z <= NEAR) return;
+    if (a.z <= NEAR) {
+      const t = (NEAR - a.z) / (b.z - a.z);
+      a = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: NEAR };
+    }
+    if (b.z <= NEAR) {
+      const t = (NEAR - b.z) / (a.z - b.z);
+      b = { x: b.x + (a.x - b.x) * t, y: b.y + (a.y - b.y) * t, z: NEAR };
+    }
+    const pa = projectCam(a);
+    const pb = projectCam(b);
+    if (!pa || !pb) return;
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+  }
+
+  function drawRange(B, now) {
+    const farCenter = projectPoint({ x: 0, y: 5, z: TUNNEL.depth - 2 }, B);
+    if (farCenter) {
+      const radius = Math.max(80, farCenter.scale * 9);
+      const g = ctx.createRadialGradient(farCenter.x, farCenter.y, 0, farCenter.x, farCenter.y, radius);
+      g.addColorStop(0, 'rgba(60, 190, 255, 0.2)');
+      g.addColorStop(0.45, 'rgba(40, 120, 255, 0.08)');
+      g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = g;
+      ctx.fillRect(farCenter.x - radius, farCenter.y - radius, radius * 2, radius * 2);
+      ctx.restore();
+    }
+
+    ctx.lineCap = 'round';
+
+    // 深度环
+    for (let z = 4; z <= TUNNEL.depth; z += 4) {
+      const ratio = z / TUNNEL.depth;
+      const alpha = clamp(1.06 - ratio, 0.05, 0.72);
+      const color = 'rgba(72, 196, 255, ' + alpha.toFixed(3) + ')';
+      const width = z <= 12 ? 1.5 : 1;
+      const a = { x: -TUNNEL.halfW, y: 0, z };
+      const b = { x: TUNNEL.halfW, y: 0, z };
+      const c = { x: TUNNEL.halfW, y: TUNNEL.height, z };
+      const d = { x: -TUNNEL.halfW, y: TUNNEL.height, z };
+      drawLine3D(a, b, B, color, width);
+      drawLine3D(b, c, B, color, width);
+      drawLine3D(c, d, B, color, width);
+      drawLine3D(d, a, B, color, width);
+    }
+
+    // 地面导引线
+    for (const lx of [-8, -4, 0, 4, 8]) {
+      const alpha = lx === 0 ? 0.3 : 0.12;
+      drawLine3D(
+        { x: lx, y: 0.012, z: 2 },
+        { x: lx, y: 0.012, z: TUNNEL.depth },
+        B,
+        'rgba(120, 230, 255, ' + alpha + ')',
+        lx === 0 ? 1.6 : 1.1
+      );
+    }
+
+    // 墙脚灯带
+    for (const sx of [-TUNNEL.halfW + 0.02, TUNNEL.halfW - 0.02]) {
+      drawLine3D(
+        { x: sx, y: 0.03, z: 2 },
+        { x: sx, y: 0.03, z: TUNNEL.depth },
+        B,
+        'rgba(62, 231, 255, 0.16)',
+        2.4
+      );
+    }
+  }
+
+  /* ============ 渲染：靶子 ============ */
+  function drawTargetShape(t, projected, now) {
+    const px = projected.x;
+    const py = projected.y;
+    const rad = t.r * projected.scale;
+    if (rad < 1.2) return;
+
+    const c1 = '#6df6ff';
+    const c2 = '#2b7bff';
+    const fog = clamp(1.25 - projected.z / 46, 0.42, 1);
+
+    // 地面投影
+    const floor = projectPoint({ x: t.x, y: 0.02, z: t.z }, getBasis());
+    if (floor) {
+      const fw = Math.max(2, rad * 1.15);
+      ctx.save();
+      ctx.globalAlpha = 0.16 * fog;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(floor.x, floor.y, fw, Math.max(1.2, fw * 0.22), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.globalAlpha = fog;
+
+    // 光晕
+    const glow = ctx.createRadialGradient(0, 0, rad * 0.3, 0, 0, rad * 2.8);
+    glow.addColorStop(0, 'rgba(62, 231, 255, 0.28)');
+    glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, rad * 2.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 球体
+    const body = ctx.createRadialGradient(-rad * 0.32, -rad * 0.36, rad * 0.08, 0, 0, rad * 1.04);
+    body.addColorStop(0, '#ffffff');
+    body.addColorStop(0.26, c1);
+    body.addColorStop(0.85, c2);
+    body.addColorStop(1, 'rgba(10, 20, 40, 0.95)');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(0, 0, rad, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 边缘高光
+    ctx.beginPath();
+    ctx.arc(0, 0, rad * 0.98, -Math.PI * 0.75, -Math.PI * 0.2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = Math.max(1, rad * 0.05);
+    ctx.stroke();
+
+    // 靶心
+    if (rad > 7) {
+      ctx.beginPath();
+      ctx.arc(0, 0, rad * 0.55, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(4, 14, 26, 0.32)';
+      ctx.lineWidth = Math.max(1.4, rad * 0.07);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(1.8, rad * 0.13), 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.shadowColor = c1;
+      ctx.shadowBlur = Math.min(14, rad * 0.6);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.restore();
+  }
+
+  function drawTargets(B, now) {
+    const list = [];
+    for (const t of S.targets) {
+      const projected = projectPoint(t, B);
+      if (projected) list.push({ t, projected });
+    }
+    list.sort((a, b) => b.projected.z - a.projected.z);
+    for (const item of list) drawTargetShape(item.t, item.projected, now);
+  }
+
+  /* ============ 渲染：世界特效 ============ */
+  function drawWorldEffects(B, now) {
+    for (const p of S.particles) {
+      const projected = projectPoint(p, B);
+      if (!projected) continue;
+      const alpha = clamp(p.life / p.maxLife, 0, 1);
+      const radius = clamp(p.size * projected.scale, 0.6, 7);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(projected.x, projected.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    for (const r of S.ripples) {
+      const projected = projectPoint(r, B);
+      if (!projected) continue;
+      const alpha = clamp(r.life / r.maxLife, 0, 1);
+      const radius = r.r * projected.scale;
+      if (radius < 1) continue;
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.9;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = r.width * alpha + 0.4;
+      ctx.shadowColor = r.color;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(projected.x, projected.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    for (const f of S.floaters) {
+      const projected = projectPoint(f, B);
+      if (!projected) continue;
+      const alpha = clamp(f.life / f.maxLife, 0, 1);
+      const size = clamp(f.size * projected.scale, 10, 40);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = f.color;
+      ctx.font = '700 ' + size.toFixed(1) + 'px ui-monospace, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+      ctx.shadowBlur = 6;
+      ctx.fillText(f.text, projected.x, projected.y);
+      ctx.restore();
+    }
+  }
+
+  /* ============ 渲染：枪 / 枪口火焰 / 弹道 ============ */
+  function getMuzzle() {
+    const swayX = clamp(S.lookVel.x * -0.35, -22, 22);
+    const swayY = clamp(S.lookVel.y * -0.25, -14, 14);
+    const kick = S.aimKick;
+    return {
+      x: W * 0.575 + swayX,
+      y: H * 0.8 + swayY + kick * 18
+    };
+  }
+
+  function capsule(x1, y1, x2, y2, w1, w2, fill, stroke) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    ctx.beginPath();
+    ctx.moveTo(x1 + nx * w1 / 2, y1 + ny * w1 / 2);
+    ctx.lineTo(x2 + nx * w2 / 2, y2 + ny * w2 / 2);
+    ctx.lineTo(x2 - nx * w2 / 2, y2 - ny * w2 / 2);
+    ctx.lineTo(x1 - nx * w1 / 2, y1 - ny * w1 / 2);
+    ctx.closePath();
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+  }
+
+  function drawGun(now) {
+    // 小屏（手机）不显示武器，避免遮挡视野
+    if (W < 700) return;
+
+    const idleX = Math.sin(now / 1300) * 3.2;
+    const idleY = Math.cos(now / 1600) * 2.6;
+    const swayX = clamp(S.lookVel.x * -0.5, -24, 24) + idleX;
+    const swayY = clamp(S.lookVel.y * -0.4, -16, 16) + idleY;
+    const kick = S.aimKick;
+    const scale = clamp(Math.min(W / 1440, H / 900), 0.72, 1.12);
+
+    const base = { x: W + 260 * scale + swayX * 0.4, y: H + 210 * scale + swayY * 0.5 + kick * 10 };
+    const center = { x: W * 0.5, y: H * 0.5 };
+    const tip = {
+      x: base.x + (center.x - base.x) * 0.6 + swayX,
+      y: base.y + (center.y - base.y) * 0.6 + swayY + kick * 22
+    };
+
+    const dx = tip.x - base.x;
+    const dy = tip.y - base.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+
+    const P = (t, perp) => ({
+      x: base.x + dx * t + nx * perp * scale,
+      y: base.y + dy * t + ny * perp * scale
+    });
+
+    const seg = (t0, t1, w0, w1, fill, stroke) => {
+      const a = P(t0, 0);
+      const b = P(t1, 0);
+      capsule(a.x, a.y, b.x, b.y, w0 * scale, w1 * scale, fill, stroke);
+    };
+
+    // 枪身
+    const bodyGrad = ctx.createLinearGradient(base.x, base.y, tip.x, tip.y);
+    bodyGrad.addColorStop(0, 'rgba(8, 13, 21, 0.99)');
+    bodyGrad.addColorStop(0.5, 'rgba(11, 18, 29, 0.99)');
+    bodyGrad.addColorStop(1, 'rgba(22, 36, 53, 0.99)');
+    seg(0, 0.62, 210, 96, bodyGrad, 'rgba(110, 210, 250, 0.16)');
+
+    // 弹匣
+    const magA = P(0.3, -58);
+    const magB = P(0.46, -72);
+    capsule(magA.x, magA.y, magB.x, magB.y, 44 * scale, 54 * scale, 'rgba(7, 12, 19, 0.99)', 'rgba(110, 210, 250, 0.14)');
+
+    // 护木
+    seg(0.56, 0.95, 86, 38, 'rgba(10, 18, 28, 0.99)', 'rgba(110, 210, 250, 0.24)');
+
+    // 枪管
+    seg(0.92, 1, 34, 22, 'rgba(8, 13, 20, 0.99)', 'rgba(120, 220, 255, 0.32)');
+
+    // 顶部导轨
+    const railA = P(0.12, 74);
+    const railB = P(0.9, 26);
+    capsule(railA.x, railA.y, railB.x, railB.y, 15 * scale, 8 * scale, 'rgba(26, 46, 66, 0.98)', 'rgba(110, 230, 255, 0.45)');
+
+    // 散热孔
+    ctx.strokeStyle = 'rgba(120, 220, 255, 0.22)';
+    ctx.lineWidth = 2 * scale;
+    for (let i = 0; i < 3; i++) {
+      const a = P(0.7 + i * 0.07, -20);
+      const b = P(0.7 + i * 0.07, 22);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    // 准星柱
+    const postA = P(0.955, 24);
+    const postB = P(0.955, 62);
+    capsule(postA.x, postA.y, postB.x, postB.y, 11 * scale, 8 * scale, 'rgba(16, 30, 44, 0.99)', 'rgba(110, 220, 255, 0.35)');
+
+    const dot = P(0.955, 66);
+    ctx.save();
+    ctx.fillStyle = '#62f0ff';
+    ctx.shadowColor = '#3ee7ff';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, 2.8 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 枪口火焰
+    const age = now - S.shotAt;
+    if (age >= 0 && age < 80) {
+      const k = 1 - age / 80;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const flare = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, 60 * k + 14);
+      flare.addColorStop(0, 'rgba(255, 255, 235, ' + (0.95 * k) + ')');
+      flare.addColorStop(0.3, 'rgba(120, 240, 255, ' + (0.6 * k) + ')');
+      flare.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = flare;
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, 60 * k + 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(220, 250, 255, ' + (0.85 * k) + ')';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const ang = (Math.PI / 2) * i + Math.PI / 4;
+        const len2 = (28 + Math.random() * 24) * k;
+        ctx.beginPath();
+        ctx.moveTo(tip.x, tip.y);
+        ctx.lineTo(tip.x + Math.cos(ang) * len2, tip.y + Math.sin(ang) * len2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawTracer(now) {
+    if (!S.tracer) return;
+    const age = now - S.tracer.at;
+    if (age > 90) { S.tracer = null; return; }
+    const alpha = clamp(1 - age / 90, 0, 1);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(180, 245, 255, ' + (alpha * 0.75) + ')';
+    ctx.lineWidth = 1.6;
+    ctx.shadowColor = '#3ee7ff';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(S.tracer.from.x, S.tracer.from.y);
+    ctx.lineTo(S.tracer.to.x, S.tracer.to.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ============ 渲染：准星 / 命中反馈 ============ */
+  function drawCrosshair(now) {
+    const cx = W / 2;
+    const cy = H / 2;
+    const gap = 7 + S.aimKick * 7;
+    const len = 10;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(236, 250, 255, 0.92)';
+    ctx.lineWidth = 1.6;
+    ctx.shadowColor = 'rgba(62, 231, 255, 0.9)';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - gap - len);
+    ctx.lineTo(cx, cy - gap);
+    ctx.moveTo(cx, cy + gap);
+    ctx.lineTo(cx, cy + gap + len);
+    ctx.moveTo(cx - gap - len, cy);
+    ctx.lineTo(cx - gap, cy);
+    ctx.moveTo(cx + gap, cy);
+    ctx.lineTo(cx + gap + len, cy);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 1.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    const sinceHit = now - S.hitMarkerAt;
+    if (sinceHit >= 0 && sinceHit < 200) {
+      const k = 1 - sinceHit / 200;
+      const spread = 8 + (1 - k) * 10;
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.45 * k;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.8;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = '#3ee7ff';
+      ctx.shadowBlur = 18;
+      const s = 16;
+      ctx.beginPath();
+      ctx.moveTo(cx - spread - s, cy - spread - s);
+      ctx.lineTo(cx - spread, cy - spread);
+      ctx.moveTo(cx + spread, cy + spread);
+      ctx.lineTo(cx + spread + s, cy + spread + s);
+      ctx.moveTo(cx + spread + s, cy - spread - s);
+      ctx.lineTo(cx + spread, cy - spread);
+      ctx.moveTo(cx - spread, cy + spread);
+      ctx.lineTo(cx - spread - s, cy + spread + s);
+      ctx.stroke();
+
+      ctx.globalAlpha = k * 0.85;
+      ctx.strokeStyle = 'rgba(150, 250, 255, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 20 + (1 - k) * 26, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawHitFlash(now) {
+    const age = now - S.flashAt;
+    if (age < 0 || age > 220) return;
+    const k = 1 - age / 220;
+    const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.42);
+    g.addColorStop(0, 'rgba(150, 250, 255, ' + (0.22 * k) + ')');
+    g.addColorStop(0.5, 'rgba(80, 220, 255, ' + (0.09 * k) + ')');
+    g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  /* ============ 渲染：菜单氛围 ============ */
+  const AMBIENT = [
+    { x: -3.4, y: 2.6, z: 15, r: 0.5, phase: 0.6 },
+    { x: 3.1, y: 4.4, z: 21, r: 0.42, phase: 2.2 },
+    { x: 0.6, y: 1.5, z: 9.5, r: 0.34, phase: 4.1 },
+    { x: -1.8, y: 6.2, z: 26, r: 0.5, phase: 5.3 }
+  ];
+
+  function drawAmbient(B, now) {
+    for (const a of AMBIENT) {
+      const t = now / 1000;
+      const y = a.y + Math.sin(t * 0.6 + a.phase) * 0.22;
+      const projected = projectPoint({ x: a.x, y, z: a.z }, B);
+      if (!projected) continue;
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      drawTargetShape({ x: a.x, y, z: a.z, r: a.r, born: -1e9, bonusWindow: 1, phase: a.phase }, projected, now);
+      ctx.restore();
+    }
+  }
+
+  /* ============ 渲染主函数 ============ */
+  function render(now) {
+    paintBackground(now);
+
+    const B = getBasis();
+    const shake = S.shake > 0.2 ? S.shake : 0;
+    const sx = shake ? (Math.random() - 0.5) * shake * 1.4 : 0;
+    const sy = shake ? (Math.random() - 0.5) * shake * 1.4 : 0;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    drawRange(B, now);
+    if (S.state === 'menu') {
+      drawAmbient(B, now);
+    } else {
+      drawTargets(B, now);
+    }
+    drawWorldEffects(B, now);
+    ctx.restore();
+
+    if (S.state === 'playing' || S.state === 'countdown') {
+      drawGun(now);
+      drawTracer(now);
+      drawCrosshair(now);
+      drawHitFlash(now);
+    }
+  }
+
+  /* ============ 输入 ============ */
+  document.addEventListener('mousemove', (e) => {
+    if (S.state !== 'playing' && S.state !== 'countdown') return;
+    const dx = e.movementX || 0;
+    const dy = e.movementY || 0;
+    if (!dx && !dy) return;
+    applyLook(dx, dy);
+  });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') {
+      e.preventDefault();
+      S.sawTouch = true;
+      updateControlHint();
+      if (S.state !== 'playing' && S.state !== 'countdown') return;
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+      touchLook = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, start: performance.now() };
+      return;
+    }
+
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (S.state === 'playing') {
+      e.preventDefault();
+      Sound.unlock();
+      if (!S.pointerLocked) requestLock();
+      shoot();
+    } else if (S.state === 'countdown') {
+      if (!S.pointerLocked) requestLock();
+    }
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!touchLook || e.pointerId !== touchLook.id) return;
+    e.preventDefault();
+    if (S.state !== 'playing' && S.state !== 'countdown') {
+      touchLook = null;
+      return;
+    }
+    const dx = e.clientX - touchLook.x;
+    const dy = e.clientY - touchLook.y;
+    touchLook.x = e.clientX;
+    touchLook.y = e.clientY;
+    touchLook.moved += Math.hypot(dx, dy);
+    applyLook(dx, dy);
+  }, { passive: false });
+
+  function finishTouch(e) {
+    if (!touchLook || e.pointerId !== touchLook.id) return;
+    const info = touchLook;
+    touchLook = null;
+    if (S.state === 'playing' && info.moved < 12 && performance.now() - info.start < 350) {
+      Sound.unlock();
+      shoot();
+    }
+  }
+
+  canvas.addEventListener('pointerup', finishTouch);
+  canvas.addEventListener('pointercancel', (e) => {
+    if (touchLook && e.pointerId === touchLook.id) touchLook = null;
+  });
+
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  document.addEventListener('pointerlockchange', () => {
+    const locked = document.pointerLockElement === canvas;
+    if (S.pointerLocked === locked) return;
+    S.pointerLocked = locked;
+    if (locked) S.lockFailed = false;
+    updateControlHint();
+    if (!locked && S.state === 'playing') {
+      lockExitAt = performance.now();
+      pauseGame();
+    }
+  });
+
+  document.addEventListener('pointerlockerror', () => {
+    S.lockFailed = true;
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+
+    if (historyOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeHistory();
+      }
+      return;
+    }
+
+    if (e.code === 'Space' || e.key === ' ') {
+      e.preventDefault();
+      if (S.state === 'menu' || S.state === 'results') startGame();
+      else if (S.state === 'paused') resumeGame();
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      if (S.state === 'playing') pauseGame();
+      else if (S.state === 'paused' && performance.now() - lockExitAt > 300) resumeGame();
+      else if (S.state === 'countdown' || S.state === 'results') showMenu();
+      return;
+    }
+
+    if (e.key === 'm' || e.key === 'M') {
+      toggleMute();
+      return;
+    }
+
+    if (e.key === 'r' || e.key === 'R') {
+      if (S.state === 'results' || S.state === 'paused') startGame();
+      return;
+    }
+
+    if (e.key === '[') {
+      nudgeSensitivity(-0.05);
+      return;
+    }
+    if (e.key === ']') {
+      nudgeSensitivity(0.05);
+      return;
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && S.state === 'playing') pauseGame();
+  });
+
+  /* ============ 菜单交互 ============ */
+  $$('.mode').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      S.mode = btn.dataset.mode;
+      syncSettingsUi();
+      refreshBest();
+      saveSettings();
+      Sound.ui();
+    });
+  });
+
+  $$('#diff-group button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      S.difficulty = btn.dataset.diff;
+      syncSettingsUi();
+      refreshBest();
+      saveSettings();
+      Sound.ui();
+    });
+  });
+
+  $$('#time-group button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      S.duration = Number(btn.dataset.time);
+      S.timeLeft = S.duration;
+      syncSettingsUi();
+      refreshBest();
+      saveSettings();
+      Sound.ui();
+    });
+  });
+
+  $$('#goal-group .chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const goal = btn.dataset.goal;
+      if (goal === 'time') {
+        S.goalMode = 'time';
+      } else {
+        S.goalMode = 'count';
+        S.goalCount = Number(goal);
+      }
+      S.timeLeft = S.duration;
+      syncSettingsUi();
+      refreshBest();
+      saveSettings();
+      Sound.ui();
+    });
+  });
+
+  ui.sensSlider.addEventListener('input', (e) => setSensitivity(e.target.value, true));
+  ui.pauseSens.addEventListener('input', (e) => setSensitivity(e.target.value, true));
+
+  ui.countSlider.addEventListener('input', (e) => setTargetCount(e.target.value));
+  ui.countSlider.addEventListener('change', () => Sound.ui());
+  ui.countAuto.addEventListener('click', () => {
+    setTargetCountAuto();
+    Sound.ui();
+  });
+
+  $('#btn-start').addEventListener('click', startGame);
+  $('#btn-pause').addEventListener('click', pauseGame);
+  $('#btn-resume').addEventListener('click', resumeGame);
+  $('#btn-restart').addEventListener('click', startGame);
+  $('#btn-quit').addEventListener('click', showMenu);
+  $('#btn-again').addEventListener('click', startGame);
+  $('#btn-menu').addEventListener('click', showMenu);
+  $('#btn-sound').addEventListener('click', toggleMute);
+  $('#btn-sound-menu').addEventListener('click', toggleMute);
+  $('#btn-music').addEventListener('click', toggleMusic);
+
+  $('#btn-history-menu').addEventListener('click', openHistory);
+  $('#btn-history-results').addEventListener('click', openHistory);
+  ui.btnHistoryClose.addEventListener('click', closeHistory);
+  ui.btnHistoryClear.addEventListener('click', handleHistoryClear);
+  ui.history.addEventListener('click', (e) => {
+    if (e.target === ui.history) closeHistory();
+  });
+
+  // 浏览器自动播放限制：首次交互时再尝试播放开始界面音乐
+  const retryMusic = () => {
+    if (S.state === 'menu') Music.playMenu();
+    else if (S.state === 'results') Music.playResult();
+  };
+  window.addEventListener('pointerdown', retryMusic, { passive: true });
+  window.addEventListener('keydown', retryMusic);
+
+  /* ============ 初始化 ============ */
+  function resize() {
+    DPR = clamp(window.devicePixelRatio || 1, 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    focal = (H / 2) / Math.tan(FOV_Y / 2);
+  }
+
+  window.addEventListener('resize', resize);
+
+  function init() {
+    resize();
+    syncSettingsUi();
+    refreshBest();
+    updateHud();
+    Music.playMenu();
+    lastFrame = performance.now();
+    requestAnimationFrame(frame);
+  }
+
+  init();
+
+  /* ============ 调试 / 自动化接口 ============ */
+  window.AimTrainer = Object.freeze({
+    getState() {
+      const B = getBasis();
+      return {
+        state: S.state,
+        mode: S.mode,
+        difficulty: S.difficulty,
+        duration: S.duration,
+        goalMode: S.goalMode,
+        goalCount: S.goalCount,
+        goalTarget: goalTarget(),
+        goalDone: S.goalDoneAt > 0,
+        targetCountMode: S.targetCountMode,
+        targetCount: S.targetCount,
+        effectiveTargets: effectiveTargetCount(),
+        sensitivity: S.sensitivity,
+        pointerLocked: S.pointerLocked,
+        camera: { yaw: S.camera.yaw, pitch: S.camera.pitch },
+        viewport: { width: W, height: H },
+        timeLeft: S.timeLeft,
+        elapsed: S.elapsed,
+        score: S.score,
+        hits: S.hits,
+        misses: S.misses,
+        combo: S.combo,
+        maxCombo: S.maxCombo,
+        accuracy: Math.round(accuracy() * 10) / 10,
+        muted: S.muted,
+        music: Music.info(),
+        targets: S.targets.map((t) => {
+          const p = projectPoint(t, B);
+          return {
+            x: t.x,
+            y: t.y,
+            z: t.z,
+            r: t.r,
+            sx: p ? Math.round(p.x * 10) / 10 : null,
+            sy: p ? Math.round(p.y * 10) / 10 : null,
+            sr: p ? Math.round(t.r * p.scale * 10) / 10 : null,
+            bonusLeft: Math.max(0, (t.bonusWindow || 2) - (S.elapsed - t.born))
+          };
+        })
+      };
+    },
+    look(dx, dy) {
+      applyLook(dx, dy);
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+AIM TRAINER — Original Soundtrack
+=================================
+
+Tracks
+------
+1. "Neon Range" (menu.wav)
+   - 21.3 s seamless loop, 44.1 kHz / 16-bit stereo
+   - dark synthwave pads, 16th-note arpeggio, sub bass and soft kick pulse
+   - used on the start / menu screen
+
+2. "Target Cleared" (results.wav)
+   - 12.0 s outro, 44.1 kHz / 16-bit stereo
+   - impact hits, rising chords, bell arpeggio and long reverb tail
+   - used on the results screen
+
+Both tracks are original works synthesized entirely from scratch by the
+AIM TRAINER project. No samples, recordings or melodies from any existing
+song are used.
+
+License
+-------
+To the extent possible under law, the AIM TRAINER project has waived all
+copyright and related or neighboring rights to these audio files.
+
+They are released under CC0 1.0 Universal (Public Domain Dedication):
+https://creativecommons.org/publicdomain/zero/1.0/
+
+You may copy, modify, distribute, remix and use them, including for
+commercial purposes, without attribution.
+
+Reproducing
+-----------
+The tracks are generated procedurally by:
+
+    python music/generate_music.py
+
+Requirements: Python 3 and numpy. The script is deterministic, so running it
+again produces the same audio.
